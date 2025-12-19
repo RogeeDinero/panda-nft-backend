@@ -27,28 +27,32 @@ app.get('/api/nfts', async (req, res) => {
         code: 'atomicassets',
         scope: wallet,
         table: 'assets',
-        limit: 24
+        limit: 50
       })
     });
 
     const rpcData = await rpcResp.json();
     
+    // Log first row structure
+    if (rpcData.rows && rpcData.rows.length > 0) {
+      console.log('SAMPLE ROW:', JSON.stringify(rpcData.rows[0], null, 2));
+    }
+    
     const nfts = (rpcData.rows || []).map(row => {
-      // Panda collection uses template IDs - construct working image URLs
-      const templateId = row.template_id;
-      let img = '';
-      
-      if (templateId) {
-        // Use Wax AtomicAssets CDN (works reliably)
-        img = `https://wax.api.atomicassets.io/images/templates/354415534331/354415534331/${templateId}/preview.png`;
-        // Or Proton explorer fallback
-        img = `https://proton.arkhamintelligence.com/nft/354415534331/${templateId}`;
+      let img = row.data?.img ||
+                row.data?.image ||
+                row.template?.immutable_data?.img ||
+                row.template?.immutable_data?.image ||
+                '';
+
+      if (!img && row.template_id) {
+        img = `https://images.atomicassets.io/nft/354415534331/354415534331/${row.template_id}/preview.png`;
       }
 
-      const name = `Panda #${templateId || row.asset_id}`;
+      const name = row.name || row.template?.name || `Asset #${row.asset_id || ''}`;
       
       return { image: img, name };
-    }).slice(0, 24);  // limit results
+    });
 
     res.json(nfts);
   } catch (err) {
