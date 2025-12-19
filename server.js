@@ -36,23 +36,21 @@ app.get('/api/nfts', async (req, res) => {
   console.log('SAMPLE ROW:', JSON.stringify(rpcData.rows[0], null, 2));
 }
     const nfts = (rpcData.rows || []).map(row => {
-      let img = row.data?.img ||
-                row.data?.image ||
-                row.template?.immutable_data?.image_1 ||
-                row.template?.immutable_data?.image ||
-                '';
+  let img = row.data?.img ||
+            row.data?.image ||
+            row.template?.immutable_data?.img ||
+            row.template?.immutable_data?.image ||
+            '';
 
-      const name = row.name || row.template?.name || `Asset #${row.asset_id || ''}`;
-      
-      return { image: img, name };
-    });
-
-    res.json(nfts);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Failed to load NFTs' });
+  if (!img && row.template_id) {
+    img = `https://images.atomicassets.io/nft/354415534331/354415534331/${row.template_id}/preview.png`;
   }
+
+  const name = row.name || row.template?.name || `Asset #${row.asset_id || ''}`;
+  
+  return { image: img, name };
 });
+
 
 const server = app.listen(PORT, () => {
   console.log(`Panda NFT proxy on port ${PORT}`);
