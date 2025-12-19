@@ -19,14 +19,36 @@ app.get('/api/nfts', async (req, res) => {
   }
 
   try {
-    // Use Proton's official NFT API (much simpler + working images)
-    const resp = await fetch(`https://api.protonnft.io/v1/assets?account=${wallet}&collection_name=354415534331&limit=24`);
-    const data = await resp.json();
+    const rpcResp = await fetch('https://proton.greymass.com/v1/chain/get_table_rows', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        json: true,
+        code: 'atomicassets',
+        scope: wallet,
+        table: 'assets',
+        limit: 24
+      })
+    });
+
+    const rpcData = await rpcResp.json();
     
-    const nfts = data.data.map(nft => ({
-      image: nft.template?.image || nft.data?.img || nft.data?.image || '',
-      name: nft.template?.name || nft.data?.name || `Asset #${nft.asset_id}`
-    })).filter(nft => nft.image); // only NFTs with images
+    const nfts = (rpcData.rows || []).map(row => {
+      // Panda collection uses template IDs - construct working image URLs
+      const templateId = row.template_id;
+      let img = '';
+      
+      if (templateId) {
+        // Use Wax AtomicAssets CDN (works reliably)
+        img = `https://wax.api.atomicassets.io/images/templates/354415534331/354415534331/${templateId}/preview.png`;
+        // Or Proton explorer fallback
+        img = `https://proton.arkhamintelligence.com/nft/354415534331/${templateId}`;
+      }
+
+      const name = `Panda #${templateId || row.asset_id}`;
+      
+      return { image: img, name };
+    }).slice(0, 24);  // limit results
 
     res.json(nfts);
   } catch (err) {
