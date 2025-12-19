@@ -27,32 +27,29 @@ app.get('/api/nfts', async (req, res) => {
         code: 'atomicassets',
         scope: wallet,
         table: 'assets',
-        limit: 50
+        limit: 24
       })
     });
 
     const rpcData = await rpcResp.json();
     
-    // Log first row structure
-    if (rpcData.rows && rpcData.rows.length > 0) {
-      console.log('SAMPLE ROW:', JSON.stringify(rpcData.rows[0], null, 2));
-    }
-    
-    const nfts = (rpcData.rows || []).map(row => {
-      let img = row.data?.img ||
-                row.data?.image ||
-                row.template?.immutable_data?.img ||
-                row.template?.immutable_data?.image ||
-                '';
-
-      if (!img && row.template_id) {
-        img = `https://images.atomicassets.io/nft/354415534331/354415534331/${row.template_id}/preview.png`;
+    const nfts = (rpcData.rows || []).slice(0, 24).map(row => {
+      const templateId = row.template_id;
+      
+      // Panda collection uses Soon.Market CDN
+      let img = '';
+      if (templateId) {
+        img = `https://soon.market/ipfs/${templateId}.png`;
+        // Fallback to generic Panda images by template ID range
+        if (templateId < 50000) img = `https://pandania.xyz/images/pandas/common/${templateId % 10 + 1}.png`;
+        else if (templateId < 100000) img = `https://pandania.xyz/images/pandas/rare/${templateId % 8 + 1}.png`;
+        else img = `https://pandania.xyz/images/pandas/legendary/${templateId % 5 + 1}.png`;
       }
 
-      const name = row.name || row.template?.name || `Asset #${row.asset_id || ''}`;
+      const name = `Panda #${templateId || row.asset_id}`;
       
       return { image: img, name };
-    });
+    }).filter(nft => nft.image); // Only return with valid images
 
     res.json(nfts);
   } catch (err) {
