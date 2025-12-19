@@ -11,6 +11,25 @@ app.use(cors({
 
 app.use(express.json());
 
+// 👈 NEW: Proxy endpoint for images (fixes CORB)
+app.get('/api/image/:templateId', async (req, res) => {
+  const templateId = req.params.templateId;
+  const imgUrl = `https://wax.api.atomicassets.io/images/templates/354415534331/354415534331/${templateId}/preview.png`;
+  
+  try {
+    const imgResp = await fetch(imgUrl);
+    const buffer = await imgResp.arrayBuffer();
+    
+    res.set('Content-Type', 'image/png');
+    res.set('Cache-Control', 'public, max-age=3600');
+    res.send(Buffer.from(buffer));
+  } catch (err) {
+    // Fallback to placeholder
+    res.set('Content-Type', 'image/png');
+    res.send(require('fs').readFileSync('placeholder.png') || ''); 
+  }
+});
+
 app.get('/api/nfts', async (req, res) => {
   const wallet = req.query.wallet;
   
@@ -36,20 +55,12 @@ app.get('/api/nfts', async (req, res) => {
     const nfts = (rpcData.rows || []).slice(0, 24).map(row => {
       const templateId = row.template_id;
       
-      // Panda collection uses Soon.Market CDN
-      let img = '';
-      if (templateId) {
-        img = `https://soon.market/ipfs/${templateId}.png`;
-        // Fallback to generic Panda images by template ID range
-        if (templateId < 50000) img = `https://pandania.xyz/images/pandas/common/${templateId % 10 + 1}.png`;
-        else if (templateId < 100000) img = `https://pandania.xyz/images/pandas/rare/${templateId % 8 + 1}.png`;
-        else img = `https://pandania.xyz/images/pandas/legendary/${templateId % 5 + 1}.png`;
-      }
-
+      // 👈 USE IMAGE PROXY - fixes CORB completely
+      const img = templateId ? `/api/image/${templateId}` : '';
       const name = `Panda #${templateId || row.asset_id}`;
       
       return { image: img, name };
-    }).filter(nft => nft.image); // Only return with valid images
+    }).filter(nft => nft.image);
 
     res.json(nfts);
   } catch (err) {
