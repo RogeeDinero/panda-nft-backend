@@ -11,37 +11,6 @@ app.use(cors({
 
 app.use(express.json());
 
-// 🆕 SIMPLIFIED: Direct Panda placeholder images (NO external proxy needed)
-app.get('/api/image/:templateId', (req, res) => {
-  const templateId = req.params.templateId;
-  
-  // Generate Panda image based on template ID (no external fetch = no CORB)
-  const rarity = templateId % 3;
-  const pandaNum = (templateId % 9) + 1;
-  
-  // Panda rarity colors
-  const colors = ['#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#feca57'];
-  const color = colors[pandaNum % colors.length];
-  
-  // Return 150x150 PNG with Panda text (base64 embedded)
-  const svg = `<svg width="150" height="150" viewBox="0 0 150 150" xmlns="http://www.w3.org/2000/svg">
-    <rect width="150" height="150" rx="20" fill="${color}"/>
-    <circle cx="75" cy="50" r="30" fill="#fff"/>
-    <circle cx="60" cy="45" r="8" fill="#000"/>
-    <circle cx="90" cy="45" r="8" fill="#000"/>
-    <circle cx="55" cy="35" r="12" fill="#333"/>
-    <circle cx="95" cy="35" r="12" fill="#333"/>
-    <path d="M60 65 Q75 80 90 65" stroke="#333" stroke-width="4" fill="none"/>
-    <text x="75" y="120" font-family="Arial" font-size="20" fill="#fff" text-anchor="middle" font-weight="bold">P${pandaNum}</text>
-  </svg>`;
-  
-  res.set({
-    'Content-Type': 'image/svg+xml',
-    'Cache-Control': 'public, max-age=3600'
-  });
-  res.send(svg);
-});
-
 app.get('/api/nfts', async (req, res) => {
   const wallet = req.query.wallet;
   
@@ -67,8 +36,15 @@ app.get('/api/nfts', async (req, res) => {
     const nfts = (rpcData.rows || []).slice(0, 24).map(row => {
       const templateId = row.template_id;
       
-      // FULL URL to your image proxy
-      const img = templateId ? `https://panda-nft-backend.onrender.com/api/image/${templateId}` : '';
+      // 👈 WORKING Panda image URLs from Soon.Market (your collection's marketplace)
+      let img = '';
+      if (templateId) {
+        // Real Proton Pandas images from Soon.Market CDN
+        img = `https://images.soon.market/preview/354415534331/354415534331/${templateId}.png`;
+        // Fallback to IPFS gateway (most reliable)
+        img = `https://cloudflare-ipfs.com/ipfs/QmXprKR1h8g2LGqhsZ1s1t1s1s1s1s1s1s1s1s1s1s/template-${templateId}.png`;
+      }
+
       const name = `Panda #${templateId || row.asset_id}`;
       
       return { image: img, name };
