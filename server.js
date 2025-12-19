@@ -19,7 +19,8 @@ app.get('/api/nfts', async (req, res) => {
   }
 
   try {
-    const rpcResp = await fetch('https://proton.greymass.com/v1/chain/get_table_rows', {
+    // 1. Get assets
+    const assetResp = await fetch('https://proton.greymass.com/v1/chain/get_table_rows', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -27,32 +28,75 @@ app.get('/api/nfts', async (req, res) => {
         code: 'atomicassets',
         scope: wallet,
         table: 'assets',
-        limit: 50
+        limit: 24  // fewer for speed
       })
     });
 
-    const rpcData = await rpcResp.json();
+    const assets = await assetResp.json();
     
-    // Log first row structure
-    if (rpcData.rows && rpcData.rows.length > 0) {
-      console.log('SAMPLE ROW:', JSON.stringify(rpcData.rows[0], null, 2));
+    if (!assets.rows || assets.rows.length === 0) {
+      return res.json([]);
     }
-    
-    const nfts = (rpcData.rows || []).map(row => {
-      let img = row.data?.img ||
-                row.data?.image ||
-                row.template?.immutable_data?.img ||
-                row.template?.immutable_data?.image ||
-                '';
 
+    // 2. Get unique template IDs
+    const templateIds = [...new Set(assets.rows.map(row => row.template_id))];
+
+    // 3. Batch fetch templates (your collection)
+    const templates = {};
+    for (const templateId of templateIds.slice(0, 10)) {  // limit 10 templates
+      try {
+        const templateResp = await fetch('https://proton.greymass.com/v1/chain/get_table_rows', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            json: true,
+            code: 'atomicassets',
+            scope: '354415534331',  // your collection
+            table: 'template_mint',
+            lower_bound: templateId,
+            upper_bound: templateId + 1,
+            limit: 1
+          })
+        });
+        
+        const templateData = await templateResp.json();
+        if (templateData.rows && templateData.rows[0]) {
+          templates[templateId] = templateData.rows[0];
+        }
+      } catch (e) {
+        console.error('Template fetch failed:', templateId);
+      }
+    }
+
+    // 4. Map assets to NFTs with template images
+    const nfts = assets.rows.map(row => {
+      const template = templates[row.template_id];
+      
+      let img = '';
+      if (template?.immutable_data) {
+        // Try common image fields in template
+        img = template.immutable_data.img ||
+              template.immutable_data.image ||
+              template.immutable_data.image_1 ||
+              '';
+      }
+      
+      // Fallback: construct standard AtomicAssets image URL
       if (!img && row.template_id) {
-        img = `https://images.atomicassets.io/nft/354415534331/354415534331/${row.template_id}/preview.png`;
+        img = `https://images.atomicassets.io/nftv2/354415534331/354415534331/${row.template_id}/preview.png`;
       }
 
-      const name = row.name || row.template?.name || `Asset #${row.asset_id || ''}`;
+      const name = row.name || 
+                   (template?.name || '') || 
+                   `Asset #${row.asset_id}`;
       
-      return { image: img, name };
-    });
+      return { 
+        image: img, 
+        name: name,
+        asset_id: row.asset_id,
+        template_id: row.template_id
+      };
+    }).filter(nft => nft.image);  // only return NFTs with images
 
     res.json(nfts);
   } catch (err) {
