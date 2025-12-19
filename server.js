@@ -11,37 +11,16 @@ app.use(cors({
 
 app.use(express.json());
 
-app.get('/api/nfts', async (req, res) => {
-  const wallet = req.query.wallet;
-  
-  if (!wallet) {
-    return res.status(400).json({ error: 'wallet required' });
+function deserializeAtomicData(serializedData) {
+  // Simple AtomicAssets deserializer for immutable_data
+  let data = {};
+  for (let i = 0; i < serializedData.length; i += 2) {
+    const key = String.fromCharCode(serializedData[i]);
+    const valueLength = serializedData[i + 1];
+    const value = serializedData.slice(i + 2, i + 2 + valueLength).toString();
+    data[key] = value;
   }
+  return data;
+}
 
-  try {
-    // OFFICIAL XPR AtomicAssets API - gives real images + names
-    const aaResp = await fetch(`https://aa-mainnet.xprnetwork.org/api/assets?owner=${wallet}&collection=144534352512&limit=24`);
-    const aaData = await aaResp.json();
-    
-    console.log(`Found ${aaData.data?.length || 0} Pandas for ${wallet}`);
-    
-    const nfts = (aaData.data || []).slice(0, 24).map(nft => {
-      // REAL images and names from official API
-      const img = nft.template?.image || nft.data?.img || nft.data?.image || '';
-      const name = nft.template?.name || nft.data?.name || `Panda #${nft.template_id}`;
-      
-      return { 
-        image: img, 
-        name: name,
-        asset_id: nft.asset_id
-      };
-    }).filter(nft => nft.image);
-
-    console.log(`Returning ${nfts.length} NFTs`);
-    res.json(nfts);
-  } catch (err) {
-    console.error(err);
-    // Fallback to simple version
-    res.json([
-      { image: "https://ipfs-gateway.soon.market/ipfs/QmP4atVZ6erpM8tWj4a753nNwpDraf8Ga5ByGdT5P3P9sP", name: "Governor #001" },
-      { image: "https://ipfs-gateway.soon.market/ipfs/QmP4atVZ6erpM8
+app.get('/api/nfts', async (req, res) =>
