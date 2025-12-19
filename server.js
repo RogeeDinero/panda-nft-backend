@@ -32,7 +32,9 @@ app.get('/api/nfts', async (req, res) => {
     });
 
     const rpcData = await rpcResp.json();
-    
+    if (rpcData.rows && rpcData.rows.length > 0) {
+  console.log('SAMPLE ROW:', JSON.stringify(rpcData.rows[0], null, 2));
+}
     const nfts = (rpcData.rows || []).map(row => {
       let img = row.data?.img ||
                 row.data?.image ||
