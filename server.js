@@ -27,31 +27,30 @@ app.get('/api/nfts', async (req, res) => {
         code: 'atomicassets',
         scope: wallet,
         table: 'assets',
-        limit: 24,
-        // Filter for Proton Pandas only
-        index_position: "2",
-        key_type: "i64",
-        lower_bound: "144534352512",
-        upper_bound: "144534352513"
+        limit: 24
+        // 👈 REMOVED schema filter - gets ALL NFTs in wallet
       })
     });
 
     const rpcData = await rpcResp.json();
     
+    console.log('Found rows:', rpcData.rows?.length || 0);
+    
     const nfts = (rpcData.rows || []).slice(0, 24).map(row => {
-      const assetId = row.asset_id;
+      const templateId = row.template_id;
       
-      // 👈 REAL Proton Pandas images from Soon.Market IPFS gateway
-      const img = `https://ipfs-gateway.soon.market/ipfs/QmP4atVZ6erpM8tWj4a753nNwpDraf8Ga5ByGdT5P3P9sP`;
+      // 👈 WORKING IPFS gateway from your example
+      let img = `https://ipfs-gateway.soon.market/ipfs/QmP4atVZ6erpM8tWj4a753nNwpDraf8Ga5ByGdT5P3P9sP`;
       
-      // Or construct per-asset (from your working example pattern)
-      // const img = `https://ipfs-gateway.soon.market/ipfs/Qm${assetId.slice(0,46)}`;
+      // Or use Soon.Market NFT page image pattern
+      // img = `https://soon.market/_next/image?url=https%3A%2F%2Fipfs-gateway.soon.market%2Fipfs%2FQmP4atVZ6erpM8tWj4a753nNwpDraf8Ga5ByGdT5P3P9sP&w=640&q=100`;
       
-      const name = `Panda #${row.template_id || row.asset_id}`;
+      const name = `Panda #${templateId || row.asset_id}`;
       
-      return { image: img, name, asset_id: assetId };
+      return { image: img, name };
     }).filter(nft => nft.image);
 
+    console.log('Returning NFTs:', nfts.length);
     res.json(nfts);
   } catch (err) {
     console.error(err);
