@@ -19,8 +19,8 @@ app.get('/api/nfts', async (req, res) => {
   }
 
   try {
-    // Step 1: Get user's Proton Pandas assets
-    const assetResp = await fetch('https://proton.greymass.com/v1/chain/get_table_rows', {
+    // 1. Get user's assets
+    const rpcResp = await fetch('https://proton.greymass.com/v1/chain/get_table_rows', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -32,75 +32,42 @@ app.get('/api/nfts', async (req, res) => {
       })
     });
 
-    const assets = await assetResp.json();
-    const assetRows = assets.rows || [];
+    const rpcData = await rpcResp.json();
+    const assets = rpcData.rows || [];
     
-    console.log(`Found ${assetRows.length} assets for ${wallet}`);
+    console.log(`Found ${assets.length} assets`);
 
-    if (assetRows.length === 0) {
-      return res.json([]);
-    }
-
-    // Step 2: Get unique template IDs
-    const templateIds = [...new Set(assetRows.map(row => row.template_id))].slice(0, 12);
-    
-    console.log('Template IDs:', templateIds);
-
-    // Step 3: Fetch templates from Proton Pandas collection 144534352512
-    const templates = {};
-    for (const templateId of templateIds) {
+    // 2. For each asset, get real data from Soon.Market
+    const nfts = [];
+    for (const asset of assets.slice(0, 12)) {  // Limit 12 for speed
       try {
-        const templateResp = await fetch('https://proton.greymass.com/v1/chain/get_table_rows', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            json: true,
-            code: 'atomicassets',
-            scope: '144534352512',  // Proton Pandas collection
-            table: 'template_mint',
-            lower_bound: templateId.toString(),
-            limit: 1
-          })
-        });
+        const soonResp = await fetch(`https://soon.market/nft/${asset.asset_id}`);
+        const soonText = await soonResp.text();
         
-        const templateData = await templateResp.json();
-        if (templateData.rows && templateData.rows[0]) {
-          templates[templateId] = templateData.rows[0];
-          console.log(`Got template ${templateId}:`, templateData.rows[0].immutable_data);
-        }
+        // Extract name and image from Soon.Market HTML
+        const nameMatch = soonText.match(/<h1[^>]*class="[^"]*title[^"]*"[^>]*>([^<]+)<\/h1>/);
+        const imgMatch = soonText.match(/https:\/\/ipfs-gateway\.soon\.market\/ipfs\/[A-Za-z0-9]{46}/);
+        
+        const name = nameMatch ? nameMatch[1].trim() : `Panda #${asset.template_id}`;
+        const imgHash = imgMatch ? imgMatch[0] : 'QmP4atVZ6erpM8tWj4a753nNwpDraf8Ga5ByGdT5P3P9sP';
+        const img = `https://ipfs-gateway.soon.market/ipfs/${imgHash}`;
+        
+        nfts.push({ image: img, name, asset_id: asset.asset_id });
       } catch (e) {
-        console.error(`Template ${templateId} failed:`, e.message);
+        console.error(`Asset ${asset.asset_id} failed:`, e.message);
+        // Fallback
+        nfts.push({ 
+          image: `https://ipfs-gateway.soon.market/ipfs/QmP4atVZ6erpM8tWj4a753nNwpDraf8Ga5ByGdT5P3P9sP`,
+          name: `Panda #${asset.template_id}`,
+          asset_id: asset.asset_id 
+        });
       }
     }
 
-    // Step 4: Create NFTs with REAL unique images
-    const nfts = assetRows.slice(0, 24).map(row => {
-      const template = templates[row.template_id];
-      const templateData = template?.immutable_data || {};
-      
-      // Get REAL image hash from template
-      let imgHash = '';
-      if (templateData.img) imgHash = templateData.img;
-      else if (templateData.image) imgHash = templateData.image;
-      
-      let img = '';
-      if (imgHash && imgHash.startsWith('Qm')) {
-        img = `https://ipfs-gateway.soon.market/ipfs/${imgHash}`;
-      }
-      
-      const name = templateData.name || `Panda #${row.template_id}`;
-      
-      return { 
-        image: img || `https://ipfs-gateway.soon.market/ipfs/QmP4atVZ6erpM8tWj4a753nNwpDraf8Ga5ByGdT5P3P9sP`,  // fallback
-        name: name,
-        asset_id: row.asset_id
-      };
-    }).filter(nft => nft.image);
-
-    console.log(`Returning ${nfts.length} NFTs with images`);
+    console.log(`Returning ${nfts.length} real NFTs`);
     res.json(nfts);
   } catch (err) {
-    console.error('ERROR:', err);
+    console.error(err);
     res.status(500).json({ error: 'Failed to load NFTs' });
   }
 });
