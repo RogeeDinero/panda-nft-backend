@@ -11,4 +11,4 @@ app.use(cors({
 
 app.use(express.json());
 
-app.get('/api/nfts
+app.get('/
