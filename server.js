@@ -1,9 +1,9 @@
 const express = require('express');
 const cors = require('cors');
-const fetch = require('node-fetch');
+const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 
 app.use(cors({ 
   origin: ['http://pandania.xyz', 'https://pandania.xyz']
@@ -34,7 +34,6 @@ app.get('/api/nfts', async (req, res) => {
     const rpcData = await rpcResp.json();
     
     const nfts = (rpcData.rows || []).map(row => {
-      // Try more image field paths
       let img = row.data?.img ||
                 row.data?.image ||
                 row.template?.immutable_data?.image_1 ||
