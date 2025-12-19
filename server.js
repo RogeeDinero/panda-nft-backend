@@ -52,15 +52,16 @@ app.get('/api/nfts', async (req, res) => {
 
     const rpcData = await rpcResp.json();
     
-    const nfts = (rpcData.rows || []).slice(0, 24).map(row => {
-      const templateId = row.template_id;
-      
-      // 👈 USE IMAGE PROXY - fixes CORB completely
-      const img = templateId ? `/api/image/${templateId}` : '';
-      const name = `Panda #${templateId || row.asset_id}`;
-      
-      return { image: img, name };
-    }).filter(nft => nft.image);
+   const nfts = (rpcData.rows || []).slice(0, 24).map(row => {
+  const templateId = row.template_id;
+  
+  // 👈 FULL BACKEND URL - fixes relative path issue
+  const img = templateId ? `https://panda-nft-backend.onrender.com/api/image/${templateId}` : '';
+  const name = `Panda #${templateId || row.asset_id}`;
+  
+  return { image: img, name };
+}).filter(nft => nft.image);
+
 
     res.json(nfts);
   } catch (err) {
