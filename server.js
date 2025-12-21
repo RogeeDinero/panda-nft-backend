@@ -15,7 +15,7 @@ app.use(cors({
 }));
 
 const RPC = 'https://proton.greymass.com';
-const COLLECTION = '144534352512';
+const COLLECTION = 'Proton Pandas'; // correct name with space and capitalization
 
 // Helper: IPFS → HTTPS
 function resolveImage(img) {
@@ -44,9 +44,7 @@ app.get('/api/pandas', async (req, res) => {
     });
 
     const assetsData = await assetsResp.json();
-    const pandas = (assetsData.rows || []).filter(
-      a => a.collection_name === COLLECTION
-    );
+    const pandas = (assetsData.rows || []).filter(a => a.collection_name === COLLECTION);
 
     if (!pandas.length) return res.json([]);
 
@@ -70,17 +68,20 @@ app.get('/api/pandas', async (req, res) => {
     const templatesData = await templatesResp.json();
     const templateMap = {};
 
-    // ✅ Improved image extraction
     templatesData.rows.forEach(t => {
       let img = null;
 
-      // Try common keys
+      // Try common places for the image
       if (t.immutable_data) {
         img = t.immutable_data.img || t.immutable_data.image || null;
       }
 
-      // Fallback to media array if exists
-      if (!img && t.media && t.media.length > 0) {
+      // Fallback: template media array
+      if (!img && t.data?.media?.length > 0) {
+        img = t.data.media[0].url;
+      }
+
+      if (!img && t.media?.length > 0) {
         img = t.media[0].url;
       }
 
@@ -107,3 +108,4 @@ app.get('/api/pandas', async (req, res) => {
 app.listen(PORT, () => {
   console.log('🐼 Panda backend LIVE — images resolved correctly');
 });
+
