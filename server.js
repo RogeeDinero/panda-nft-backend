@@ -15,7 +15,7 @@ app.use(cors({
 }));
 
 const RPC = 'https://proton.greymass.com';
-const COLLECTION = 'Proton Pandas'; // correct name with space and capitalization
+const COLLECTION_ID = '144534352512'; // Use collection ID instead of name
 
 // Helper: IPFS → HTTPS
 function resolveImage(img) {
@@ -44,7 +44,9 @@ app.get('/api/pandas', async (req, res) => {
     });
 
     const assetsData = await assetsResp.json();
-    const pandas = (assetsData.rows || []).filter(a => a.collection_name === COLLECTION);
+
+    // Filter by collection ID
+    const pandas = (assetsData.rows || []).filter(a => a.collection === COLLECTION_ID);
 
     if (!pandas.length) return res.json([]);
 
@@ -57,7 +59,7 @@ app.get('/api/pandas', async (req, res) => {
       body: JSON.stringify({
         json: true,
         code: 'atomicassets',
-        scope: COLLECTION,
+        scope: COLLECTION_ID,
         table: 'templates',
         lower_bound: Math.min(...templateIds),
         upper_bound: Math.max(...templateIds),
@@ -108,4 +110,3 @@ app.get('/api/pandas', async (req, res) => {
 app.listen(PORT, () => {
   console.log('🐼 Panda backend LIVE — images resolved correctly');
 });
-
