@@ -17,7 +17,7 @@ app.get('/api/pandas', async (req, res) => {
   if (!wallet) return res.status(400).json({ error: 'wallet required' });
 
   try {
-    // Get your 3 pandas
+    // Get your 3 pandas asset_ids
     const assetsResp = await fetch(`${RPC}/v1/chain/get_table_rows`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -33,21 +33,24 @@ app.get('/api/pandas', async (req, res) => {
     const assetsData = await assetsResp.json();
     const pandas = (assetsData.rows || []).filter(a => a.collection_name === '144534352512');
 
-    console.log(`✅ Found ${pandas.length} Proton Pandas for ${wallet}:`, pandas.map(p => p.asset_id));
+    console.log(`✅ Found ${pandas.length} Proton Pandas:`, pandas.map(p => ({
+      asset_id: p.asset_id,
+      template_id: p.template_id
+    })));
 
     if (pandas.length === 0) return res.json([]);
 
-    // Use NeftyBlocks image pattern - THEY HAVE THE IMAGES!
-    // https://proton.neftyblocks.com/marketplace/asset/4398046895910 (your panda asset_id)
+    // OFFICIAL XPR Network NFT images - from your links!
     const pandasWithImages = pandas.map(panda => ({
       asset_id: panda.asset_id,
       template_id: panda.template_id,
       collection_name: panda.collection_name,
-      name: panda.name || `Proton Panda #${panda.asset_id.slice(-6)}`,
-      image: `https://resizer.neftyblocks.com/resize/300/300/https://ipfs.neftyblocks.io/ipfs/QmYSE12nTMvcqaryBe9daQGAmSxp8BzUrR2LK4GWEx3Wic/${panda.template_id}.png`
+      name: panda.name || `Proton Panda #${panda.template_id}`,
+      // XPR Network official image URLs (from nft.xprnetwork.org/144534352512/{template_id})
+      image: `https://nft.xprnetwork.org/144534352512/${panda.template_id}/image`
     }));
 
-    console.log(`✅ Returning ${pandasWithImages.length} pandas with NeftyBlocks images`);
+    console.log(`✅ Returning ${pandasWithImages.length} pandas with XPR Network images`);
     res.json(pandasWithImages);
   } catch (err) {
     console.error('Error:', err.message);
@@ -56,5 +59,5 @@ app.get('/api/pandas', async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`🐼 Panda backend LIVE on ${PORT}`);
+  console.log(`🐼 Panda backend LIVE - XPR Network official`);
 });
