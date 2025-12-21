@@ -1,82 +1,75 @@
-import express from "express";
-import fetch from "node-fetch";
-import cors from "cors";
+const express = require('express');
+const cors = require('cors');
+const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 
 const app = express();
-app.use(cors());
+const PORT = process.env.PORT || 10000;
 
-const PORT = process.env.PORT || 3000;
+// CORS whitelist
+app.use(cors({
+  origin: [
+    'http://localhost:5500',
+    'http://pandania.xyz',
+    'https://pandania.xyz'
+  ]
+}));
 
-/**
- * CONFIG
- * -------------------------
- */
-const ATOMIC_API = "https://proton.api.atomicassets.io/atomicassets/v1";
-const COLLECTION_NAME = "protonpandas"; // ⚠ lowercase, no spaces
+const COLLECTION_NAME = 'Proton Pandas'; // Collection name on AtomicAssets
+const ATOMIC_API = 'https://proton.api.atomicassets.io';
 
-/**
- * =========================
- * FETCH PROTON PANDAS BY WALLET
- * =========================
- */
-app.get("/api/pandas", async (req, res) => {
+// Helper: Resolve IPFS / HTTP images
+function resolveImage(img) {
+  if (!img) return null;
+  if (img.startsWith('ipfs://')) return img.replace('ipfs://', 'https://ipfs.io/ipfs/');
+  if (img.startsWith('Qm')) return `https://ipfs.io/ipfs/${img}`;
+  return img;
+}
+
+// GET /api/pandas?wallet=<wallet>
+app.get('/api/pandas', async (req, res) => {
+  const { wallet } = req.query;
+  if (!wallet) return res.status(400).json({ error: 'wallet required' });
+
   try {
-    const { wallet } = req.query;
-
-    if (!wallet) {
-      return res.status(400).json({ error: "Wallet is required" });
-    }
-
-    const url =
-      `${ATOMIC_API}/assets` +
-      `?owner=${wallet}` +
-      `&collection_name=${COLLECTION_NAME}` +
-      `&page=1&limit=1000&order=desc&sort=asset_id`;
-
+    // Fetch NFTs for wallet from AtomicAssets
+    const url = `${ATOMIC_API}/atomicassets/v1/assets?owner=${wallet}&collection_name=${encodeURIComponent(COLLECTION_NAME)}&page=1&limit=100&order=desc&sort=asset_id`;
     const response = await fetch(url);
-    const json = await response.json();
+    const data = await response.json();
 
-    if (!json.success) {
-      throw new Error("AtomicAssets API error");
-    }
+    if (!data || !data.data) return res.json([]);
 
-    const assets = json.data.map(asset => {
-      const data = asset.data || {};
+    // Map to simplified JSON for frontend
+    const result = data.data.map(asset => {
+      const name = asset.name || `Proton Panda #${asset.asset_id}`;
+      let img = null;
 
-      let image = data.img || data.image || "";
-
-      // Convert IPFS → HTTP
-      if (image.startsWith("Qm")) {
-        image = `https://ipfs.io/ipfs/${image}`;
+      // Try immutable_data first
+      if (asset.data?.immutable_data) {
+        img = asset.data.immutable_data.img || asset.data.immutable_data.image || null;
       }
-      if (image.startsWith("ipfs://")) {
-        image = image.replace("ipfs://", "https://ipfs.io/ipfs/");
+
+      // Fallback to media[0]
+      if (!img && asset.data?.media?.length > 0) {
+        img = asset.data.media[0].url;
       }
 
       return {
         asset_id: asset.asset_id,
-        name: data.name || `Proton Panda #${asset.asset_id}`,
-        image
+        template_id: asset.template?.template_id || null,
+        name,
+        image: resolveImage(img) || 'https://via.placeholder.com/160?text=No+Image'
       };
     });
 
-    res.json(assets);
+    console.log(`🐼 Returning ${result.length} Proton Pandas for ${wallet}`);
+    res.json(result);
 
   } catch (err) {
-    console.error("Atomic fetch error:", err);
-    res.status(500).json({ error: "Failed to fetch NFTs" });
+    console.error('❌ Backend error:', err);
+    res.status(500).json({ error: err.message });
   }
 });
 
-/**
- * =========================
- * HEALTH CHECK
- * =========================
- */
-app.get("/", (_, res) => {
-  res.send("🐼 Panda Pawn Shop backend running");
-});
-
 app.listen(PORT, () => {
-  console.log(`✅ Server running on port ${PORT}`);
+  console.log(`🐼 Panda backend LIVE on port ${PORT}`);
 });
