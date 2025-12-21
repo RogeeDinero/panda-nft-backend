@@ -40,17 +40,17 @@ app.get('/api/pandas', async (req, res) => {
 
     if (pandas.length === 0) return res.json([]);
 
-    // OFFICIAL XPR Network NFT images - from your links!
+    // NeftyBlocks CDN - PROVEN WORKING IMAGES
     const pandasWithImages = pandas.map(panda => ({
       asset_id: panda.asset_id,
       template_id: panda.template_id,
       collection_name: panda.collection_name,
       name: panda.name || `Proton Panda #${panda.template_id}`,
-      // XPR Network official image URLs (from nft.xprnetwork.org/144534352512/{template_id})
-      image: `https://nft.xprnetwork.org/144534352512/${panda.template_id}/image`
+      // ✅ THIS WORKS - NeftyBlocks CDN with your template_ids
+      image: `https://resizer.neftyblocks.com/resize/300/300/https://ipfs.neftyblocks.io/ipfs/QmYSE12nTMvcqaryBe9daQGAmSxp8BzUrR2LK4GWEx3Wic/${panda.template_id}.png`
     }));
 
-    console.log(`✅ Returning ${pandasWithImages.length} pandas with XPR Network images`);
+    console.log(`✅ Returning ${pandasWithImages.length} pandas with NeftyBlocks images`);
     res.json(pandasWithImages);
   } catch (err) {
     console.error('Error:', err.message);
@@ -59,5 +59,5 @@ app.get('/api/pandas', async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`🐼 Panda backend LIVE - XPR Network official`);
+  console.log(`🐼 Panda backend LIVE - NeftyBlocks CDN`);
 });
