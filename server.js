@@ -15,7 +15,7 @@ app.use(cors({
 }));
 
 const RPC = 'https://proton.greymass.com';
-const COLLECTION_ID = '144534352512'; // Numeric collection ID
+const COLLECTION = 'Proton Pandas'; // correct name with space and capitalization
 
 // Helper: IPFS → HTTPS
 function resolveImage(img) {
@@ -46,10 +46,7 @@ app.get('/api/pandas', async (req, res) => {
     const assetsData = await assetsResp.json();
     console.log(`📝 Wallet assets for ${wallet}:`, assetsData.rows);
 
-    // Filter assets by collection ID
-    const pandas = (assetsData.rows || []).filter(
-      a => a.collection_name === COLLECTION_ID || a.collection === COLLECTION_ID
-    );
+    const pandas = (assetsData.rows || []).filter(a => a.collection_name === COLLECTION);
 
     if (!pandas.length) {
       console.log('⚠️ No Proton Pandas found in wallet.');
@@ -65,7 +62,7 @@ app.get('/api/pandas', async (req, res) => {
       body: JSON.stringify({
         json: true,
         code: 'atomicassets',
-        scope: COLLECTION_ID,
+        scope: COLLECTION,
         table: 'templates',
         lower_bound: Math.min(...templateIds),
         upper_bound: Math.max(...templateIds),
@@ -77,22 +74,21 @@ app.get('/api/pandas', async (req, res) => {
     const templateMap = {};
 
     templatesData.rows.forEach(t => {
+      // 🔍 Inspect raw template to find image key
+      console.log(`Template ${t.template_id} raw:`, t);
+
       let img = null;
 
-      // Try immutable_data first
+      // Try common places for the image
       if (t.immutable_data) {
-        img = t.immutable_data.img || t.immutable_data.image || null;
-        if (!img && Array.isArray(t.immutable_data.media) && t.immutable_data.media.length > 0) {
-          img = t.immutable_data.media[0].url;
-        }
+        img = t.immutable_data.img || t.immutable_data.image || t.immutable_data.image_url || t.immutable_data.uri || null;
       }
 
-      // Try data.media array
+      // Fallback: template media array
       if (!img && t.data?.media?.length > 0) {
         img = t.data.media[0].url;
       }
 
-      // Try media array directly
       if (!img && t.media?.length > 0) {
         img = t.media[0].url;
       }
