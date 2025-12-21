@@ -57,7 +57,7 @@ app.get('/api/pandas', async (req, res) => {
 });
 
 /**
- * STEP 2: IMAGE PROXY (STREAM CORRECT CONTENT TYPE)
+ * STEP 2: IMAGE PROXY (FOR CORB SAFE DELIVERY)
  */
 app.get('/api/panda-image/:templateId', async (req, res) => {
   const { templateId } = req.params;
@@ -72,10 +72,12 @@ app.get('/api/panda-image/:templateId', async (req, res) => {
       return res.status(404).send('Image not found');
     }
 
-    // Stream the actual content type from the upstream response
-    const contentType = imgResp.headers.get('content-type') || 'application/octet-stream';
+    // Set Content-Type based on the original response
+    const contentType = imgResp.headers.get('content-type') || 'image/png';
     res.setHeader('Content-Type', contentType);
+    res.setHeader('Cache-Control', 'public, max-age=3600'); // optional caching
 
+    // Stream the image directly to the client
     imgResp.body.pipe(res);
   } catch (err) {
     console.error('Image proxy error:', err);
