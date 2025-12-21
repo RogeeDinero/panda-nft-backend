@@ -6,42 +6,27 @@ const app = express();
 const PORT = process.env.PORT || 10000;
 
 app.use(cors({
-  origin: [
-    'http://localhost:5500',
-    'http://pandania.xyz',
-    'https://pandania.xyz'
-  ]
+  origin: ['http://localhost:5500', 'http://pandania.xyz', 'https://pandania.xyz']
 }));
-
 app.use(express.json());
 
-// Proton Pandas: collection_name = 144534352512 (from NeftyBlocks URL)
-const COLLECTION_NAME = '144534352512';
-const ATOMIC_API = 'https://proton-main-atomic01.neftyblocks.com/atomicassets/v1';
+// OFFICIAL XPR AtomicAssets API (from XPR-Market repo)
+const ATOMIC_API = 'https://proton.api.atomicassets.io/atomicassets/v1';
 
 app.get('/api/pandas', async (req, res) => {
   const { wallet } = req.query;
-  if (!wallet) {
-    return res.status(400).json({ error: 'wallet query param required' });
-  }
+  if (!wallet) return res.status(400).json({ error: 'wallet required' });
 
   try {
-    // Step 1: Get assets for this wallet + collection
-    const assetsUrl = `${ATOMIC_API}/assets? 
-      owner=${encodeURIComponent(wallet)}& 
-      collection_name=${COLLECTION_NAME}& 
-      limit=100`;
-
+    // Proton Pandas collection_name from your NeftyBlocks URL
+    const assetsUrl = `${ATOMIC_API}/assets?owner=${encodeURIComponent(wallet)}&collection_name=144534352512&limit=100`;
+    
     console.log('Fetching:', assetsUrl);
     const assetsResp = await fetch(assetsUrl);
     
     if (!assetsResp.ok) {
-      console.log('Assets API failed:', assetsResp.status);
-      return res.status(502).json({ 
-        error: 'Assets API failed', 
-        status: assetsResp.status,
-        url: assetsUrl 
-      });
+      console.log('Assets failed:', assetsResp.status, await assetsResp.text());
+      return res.status(502).json({ error: 'Assets API failed', status: assetsResp.status });
     }
 
     const assetsData = await assetsResp.json();
@@ -51,37 +36,27 @@ app.get('/api/pandas', async (req, res) => {
       return res.json([]);
     }
 
-    // Step 2: Get templates for image data
+    // Get templates for images (parallel fetches)
     const templateIds = [...new Set(assets.map(a => a.template_id))];
-    const templates = [];
+    const templatePromises = templateIds.slice(0, 20).map(id => 
+      fetch(`${ATOMIC_API}/templates/${id}`)
+        .then(r => r.ok ? r.json() : null)
+        .catch(() => null)
+    );
 
-    for (const templateId of templateIds.slice(0, 20)) { // limit to avoid rate limits
-      const templateUrl = `${ATOMIC_API}/templates/${templateId}`;
-      try {
-        const templateResp = await fetch(templateUrl);
-        if (templateResp.ok) {
-          const templateData = await templateResp.json();
-          templates.push(templateData.data);
-        }
-      } catch (e) {
-        console.log('Template fetch failed:', templateId);
-      }
-    }
-
-    // Step 3: Map assets to display data
+    const templates = (await Promise.all(templatePromises)).filter(Boolean);
+    
+    // Map to clean data
     const pandas = assets.map(asset => {
       const template = templates.find(t => t.template_id === asset.template_id);
       
       let name = asset.name || template?.immutable_data?.name || 'Proton Panda';
-      let img = '';
+      let img = template?.immutable_data?.img || 
+                template?.immutable_data?.image || 
+                asset.data?.img || 
+                asset.data?.image || '';
 
-      // Try multiple image locations
-      if (template?.immutable_data?.img) img = template.immutable_data.img;
-      else if (template?.immutable_data?.image) img = template.immutable_data.image;
-      else if (asset.data?.img) img = asset.data.img;
-      else if (asset.data?.image) img = asset.data.image;
-
-      // Fix IPFS
+      // Fix IPFS URLs
       if (img?.startsWith('ipfs://')) {
         img = `https://ipfs.neftyblocks.io/ipfs/${img.slice(7)}`;
       } else if (img && !img.startsWith('http')) {
@@ -94,17 +69,16 @@ app.get('/api/pandas', async (req, res) => {
         name,
         image: img
       };
-    }).filter(p => p.image); // only return with images
+    }).filter(p => p.image); // Only with images
 
-    console.log(`Found ${pandas.length} pandas for ${wallet}`);
+    console.log(`✅ Found ${pandas.length} pandas for ${wallet}`);
     res.json(pandas);
   } catch (err) {
-    console.error('Backend error:', err);
-    res.status(500).json({ error: 'server error', details: err.message });
+    console.error('Error:', err);
+    res.status(500).json({ error: err.message });
   }
 });
 
 app.listen(PORT, () => {
-  console.log(`Panda backend on port ${PORT}`);
+  console.log(`🐼 Panda backend on ${PORT}`);
 });
-
