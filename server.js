@@ -1,52 +1,44 @@
 // server.js
-const express = require('express');
-const cors = require('cors');
-
-// Node-fetch wrapper for CommonJS + ESM compatibility
-const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
+import express from "express";
+import fetch from "node-fetch";
+import cors from "cors";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware
+// Enable CORS so your frontend can fetch
 app.use(cors());
 app.use(express.json());
 
-// =======================
-// GET Proton Pandas NFTs
-// =======================
+// Example route to test server
+app.get("/", (req, res) => {
+  res.send("Panda NFT backend is running!");
+});
+
+// Fetch Proton Pandas NFTs for a given wallet
 async function getProtonPandas(wallet) {
   try {
-    // Replace this URL with your actual Proton API or backend source
-    const url = `https://proton.greymass.com/v1/chain/get_table_rows`;
-    
-    // Example request body for Proton chain (adjust according to your schema)
-    const body = {
-      json: true,
-      code: "xprpandas",
-      scope: "xprpandas",
-      table: "assets",
-      lower_bound: wallet,
-      upper_bound: wallet,
-      limit: 100
-    };
+    // Replace this with the real Proton NFT API endpoint
+    const url = `https://api.proton.pizza/pandas/${wallet}`;
+    const response = await fetch(url);
 
-    const response = await fetch(url, {
-      method: 'POST',
-      body: JSON.stringify(body),
-      headers: { 'Content-Type': 'application/json' }
-    });
+    if (!response.ok) {
+      console.error(`Failed to fetch Proton Pandas: ${response.statusText}`);
+      return [];
+    }
 
     const data = await response.json();
 
-    // Map Proton data into the format frontend expects
-    const pandas = data.rows.map(nft => ({
-      asset_id: nft.asset_id,
-      name: nft.name || `Proton Panda #${nft.asset_id}`,
-      image: nft.img_url || nft.image || `https://via.placeholder.com/160?text=No+Image`
-    }));
+    // Ensure we have an array to map over
+    const pandasArray = Array.isArray(data) ? data : [];
 
-    return pandas;
+    // Map to simplified object for frontend
+    return pandasArray.map(nft => ({
+      name: nft.name || "Unnamed Panda",
+      image: nft.img || nft.image || null,
+      asset_id: nft.asset_id || nft.id || null,
+      edition: nft.edition || null
+    }));
 
   } catch (err) {
     console.error("Error fetching pandas:", err);
@@ -54,20 +46,23 @@ async function getProtonPandas(wallet) {
   }
 }
 
-// =======================
-// API ROUTE
-// =======================
-app.get('/api/pandas', async (req, res) => {
+// API endpoint to get pandas by wallet
+app.get("/api/pandas", async (req, res) => {
   const wallet = req.query.wallet;
-  if (!wallet) return res.status(400).json({ error: "Wallet query param required" });
+  if (!wallet) {
+    return res.status(400).json({ error: "Wallet query parameter is required" });
+  }
 
-  const pandas = await getProtonPandas(wallet);
-  res.json(pandas);
+  try {
+    const pandas = await getProtonPandas(wallet);
+    res.json(pandas);
+  } catch (err) {
+    console.error("Error in /api/pandas route:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
-// =======================
-// START SERVER
-// =======================
+// Start the server
 app.listen(PORT, () => {
   console.log(`Panda NFT backend running on port ${PORT}`);
 });
