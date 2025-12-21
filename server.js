@@ -1,44 +1,52 @@
 // server.js
-const express = require("express");
-const fetch = require("node-fetch"); // npm install node-fetch
-const cors = require("cors");
+const express = require('express');
+const cors = require('cors');
+
+// Node-fetch wrapper for CommonJS + ESM compatibility
+const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Middleware
 app.use(cors());
 app.use(express.json());
 
-// Helper to fetch Proton NFTs for a wallet
+// =======================
+// GET Proton Pandas NFTs
+// =======================
 async function getProtonPandas(wallet) {
   try {
-    const resp = await fetch("https://proton.greymass.com/v1/chain/get_table_rows", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        json: true,
-        code: "atomicassets",
-        scope: wallet,
-        table: "assets",
-        limit: 1000
-      })
+    // Replace this URL with your actual Proton API or backend source
+    const url = `https://proton.greymass.com/v1/chain/get_table_rows`;
+    
+    // Example request body for Proton chain (adjust according to your schema)
+    const body = {
+      json: true,
+      code: "xprpandas",
+      scope: "xprpandas",
+      table: "assets",
+      lower_bound: wallet,
+      upper_bound: wallet,
+      limit: 100
+    };
+
+    const response = await fetch(url, {
+      method: 'POST',
+      body: JSON.stringify(body),
+      headers: { 'Content-Type': 'application/json' }
     });
 
-    const data = await resp.json();
+    const data = await response.json();
 
-    // Filter for your Proton Pandas collection
-    const pandas = data.rows.filter(
-      nft => nft.collection_name === "144534352512"
-    );
-
-    // Map to the structure frontend expects
-    return pandas.map(nft => ({
+    // Map Proton data into the format frontend expects
+    const pandas = data.rows.map(nft => ({
       asset_id: nft.asset_id,
-      name: nft.immutable_serialized_data?.name || `Proton Panda #${nft.asset_id}`,
-      image: nft.immutable_serialized_data?.image
-        ? `https://ipfs.io/ipfs/${nft.immutable_serialized_data.image}`
-        : null
+      name: nft.name || `Proton Panda #${nft.asset_id}`,
+      image: nft.img_url || nft.image || `https://via.placeholder.com/160?text=No+Image`
     }));
+
+    return pandas;
 
   } catch (err) {
     console.error("Error fetching pandas:", err);
@@ -46,15 +54,20 @@ async function getProtonPandas(wallet) {
   }
 }
 
-// API route for frontend
-app.get("/api/pandas", async (req, res) => {
+// =======================
+// API ROUTE
+// =======================
+app.get('/api/pandas', async (req, res) => {
   const wallet = req.query.wallet;
-  if (!wallet) return res.status(400).json({ error: "Wallet query parameter required" });
+  if (!wallet) return res.status(400).json({ error: "Wallet query param required" });
 
   const pandas = await getProtonPandas(wallet);
   res.json(pandas);
 });
 
+// =======================
+// START SERVER
+// =======================
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`Panda NFT backend running on port ${PORT}`);
 });
