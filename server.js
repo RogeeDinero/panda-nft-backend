@@ -8,8 +8,9 @@ const PORT = process.env.PORT || 10000;
 // Environment variables
 const COLLECTION_NAME = process.env.COLLECTION_NAME || 'Proton Pandas';
 const RPC_ENDPOINT = process.env.RPC_ENDPOINT || 'https://proton.greymass.com';
+const ATOMICASSETS_API = process.env.ATOMICASSETS_API || 'https://proton.api.atomicassets.io/atomicassets/v1';
 
-// Allow requests from your frontend domains
+// Allow requests from frontend
 app.use(cors({
   origin: [
     'http://localhost:5500',
@@ -18,7 +19,7 @@ app.use(cors({
   ]
 }));
 
-// Helper: convert IPFS to HTTPS
+// Helper: convert IPFS → HTTPS
 function resolveImage(img) {
   if (!img) return null;
   if (img.startsWith('ipfs://')) return img.replace('ipfs://', 'https://ipfs.io/ipfs/');
@@ -26,16 +27,14 @@ function resolveImage(img) {
   return img;
 }
 
-// Proton AtomicAssets API endpoint
-const ATOMICASSETS_API = 'https://proton.api.atomicassets.io/atomicassets/v1';
-
 app.get('/api/pandas', async (req, res) => {
   const { wallet } = req.query;
   if (!wallet) return res.status(400).json({ error: 'wallet required' });
 
   try {
-    // Fetch assets for this wallet in your collection
-    const url = `${ATOMICASSETS_API}/assets?owner=${wallet}&collection_name=${COLLECTION_NAME.replace(/ /g,'').toLowerCase()}&limit=100`;
+    // 1️⃣ Fetch all assets for wallet from AtomicAssets
+    const collectionParam = COLLECTION_NAME.replace(/ /g,'').toLowerCase();
+    const url = `${ATOMICASSETS_API}/assets?owner=${wallet}&collection_name=${collectionParam}&limit=100`;
     const response = await fetch(url);
     const data = await response.json();
 
@@ -43,13 +42,14 @@ app.get('/api/pandas', async (req, res) => {
       return res.json([]);
     }
 
-    // Map assets to a simple structure for front end
+    // 2️⃣ Map assets to frontend-friendly structure
     const nfts = data.data.map(asset => {
-      const img = asset.data?.img || asset.data?.image || asset.template?.immutable_data?.img || asset.template?.immutable_data?.image || null;
+      // Prefer asset template immutable_data for image
+      let img = asset.data?.img || asset.data?.image || asset.template?.immutable_data?.img || asset.template?.immutable_data?.image || null;
 
       return {
         asset_id: asset.asset_id,
-        template_id: asset.template.template_id,
+        template_id: asset.template?.template_id || null,
         name: asset.name || `Proton Panda #${asset.asset_id}`,
         image: resolveImage(img)
       };
