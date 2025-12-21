@@ -1,4 +1,3 @@
-// server.js
 const express = require('express');
 const cors = require('cors');
 const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
@@ -6,7 +5,6 @@ const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fet
 const app = express();
 const PORT = process.env.PORT || 10000;
 
-// CORS – allow your pawnshop frontend origin(s)
 app.use(cors({
   origin: [
     'http://localhost:5500',
@@ -17,69 +15,96 @@ app.use(cors({
 
 app.use(express.json());
 
-// Proton Pandas collection info
-// NeftyBlocks URL you sent uses this collection_name: 144534352512
-// https://proton.neftyblocks.com/marketplace/listing?page=1&collection_name=144534352512
-const COLLECTION_NAME = '144534352512'; // Proton Pandas collection on Nefty
-const NEFTY_API_BASE = 'https://proton-main-atomic01.neftyblocks.com';
-const IPFS_BASE = 'https://ipfs.neftyblocks.io/ipfs'; // from page config [file:1]
+// Proton Pandas: collection_name = 144534352512 (from NeftyBlocks URL)
+const COLLECTION_NAME = '144534352512';
+const ATOMIC_API = 'https://proton-main-atomic01.neftyblocks.com/atomicassets/v1';
 
-// GET /api/pandas?wallet=<account>
 app.get('/api/pandas', async (req, res) => {
   const { wallet } = req.query;
   if (!wallet) {
-    return res.status(400).json({ error: 'wallet query param is required' });
+    return res.status(400).json({ error: 'wallet query param required' });
   }
 
   try {
-    // Nefty AtomicAssets-like endpoint: assets by owner + collection_name
-    // (path pattern based on standard atomicassets APIs and Nefty config) [file:1]
-    const url = `${NEFTY_API_BASE}/atomicassets/v1/assets?owner=${encodeURIComponent(wallet)}&collection_name=${encodeURIComponent(COLLECTION_NAME)}&limit=100`;
+    // Step 1: Get assets for this wallet + collection
+    const assetsUrl = `${ATOMIC_API}/assets? 
+      owner=${encodeURIComponent(wallet)}& 
+      collection_name=${COLLECTION_NAME}& 
+      limit=100`;
 
-    const resp = await fetch(url);
-    if (!resp.ok) {
-      return res.status(502).json({ error: 'Nefty API error', status: resp.status });
+    console.log('Fetching:', assetsUrl);
+    const assetsResp = await fetch(assetsUrl);
+    
+    if (!assetsResp.ok) {
+      console.log('Assets API failed:', assetsResp.status);
+      return res.status(502).json({ 
+        error: 'Assets API failed', 
+        status: assetsResp.status,
+        url: assetsUrl 
+      });
     }
 
-    const json = await resp.json();
-    const assets = json.data || [];
+    const assetsData = await assetsResp.json();
+    const assets = assetsData.data || [];
 
-    const mapped = assets.map(a => {
-      // Try Nefty/Atomic standard JSON structure
-      const name =
-        a.name ||
-        a.data?.name ||
-        a.template?.immutable_data?.name ||
-        'Unnamed NFT';
+    if (assets.length === 0) {
+      return res.json([]);
+    }
 
-      let img =
-        a.data?.img ||
-        a.data?.image ||
-        a.template?.immutable_data?.img ||
-        a.template?.immutable_data?.image ||
-        '';
+    // Step 2: Get templates for image data
+    const templateIds = [...new Set(assets.map(a => a.template_id))];
+    const templates = [];
 
-      if (img.startsWith('ipfs://')) {
-        img = `${IPFS_BASE}/${img.slice(7)}`;
+    for (const templateId of templateIds.slice(0, 20)) { // limit to avoid rate limits
+      const templateUrl = `${ATOMIC_API}/templates/${templateId}`;
+      try {
+        const templateResp = await fetch(templateUrl);
+        if (templateResp.ok) {
+          const templateData = await templateResp.json();
+          templates.push(templateData.data);
+        }
+      } catch (e) {
+        console.log('Template fetch failed:', templateId);
+      }
+    }
+
+    // Step 3: Map assets to display data
+    const pandas = assets.map(asset => {
+      const template = templates.find(t => t.template_id === asset.template_id);
+      
+      let name = asset.name || template?.immutable_data?.name || 'Proton Panda';
+      let img = '';
+
+      // Try multiple image locations
+      if (template?.immutable_data?.img) img = template.immutable_data.img;
+      else if (template?.immutable_data?.image) img = template.immutable_data.image;
+      else if (asset.data?.img) img = asset.data.img;
+      else if (asset.data?.image) img = asset.data.image;
+
+      // Fix IPFS
+      if (img?.startsWith('ipfs://')) {
+        img = `https://ipfs.neftyblocks.io/ipfs/${img.slice(7)}`;
       } else if (img && !img.startsWith('http')) {
-        // Sometimes plain CID
-        img = `${IPFS_BASE}/${img}`;
+        img = `https://ipfs.neftyblocks.io/ipfs/${img}`;
       }
 
       return {
-        asset_id: a.asset_id,
+        asset_id: asset.asset_id,
+        template_id: asset.template_id,
         name,
         image: img
       };
-    }).filter(a => !!a.image); // only keep with image
+    }).filter(p => p.image); // only return with images
 
-    res.json(mapped);
+    console.log(`Found ${pandas.length} pandas for ${wallet}`);
+    res.json(pandas);
   } catch (err) {
-    console.error('Error in /api/pandas:', err);
+    console.error('Backend error:', err);
     res.status(500).json({ error: 'server error', details: err.message });
   }
 });
 
 app.listen(PORT, () => {
-  console.log(`Panda backend listening on port ${PORT}`);
+  console.log(`Panda backend on port ${PORT}`);
 });
+
