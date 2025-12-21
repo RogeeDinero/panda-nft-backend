@@ -15,7 +15,7 @@ app.use(cors({
 }));
 
 const RPC = 'https://proton.greymass.com';
-const COLLECTION_ID = '144534352512'; // Use collection ID instead of name
+const COLLECTION_NAME = 'Proton Pandas'; // correct collection name
 
 // Helper: IPFS → HTTPS
 function resolveImage(img) {
@@ -30,7 +30,7 @@ app.get('/api/pandas', async (req, res) => {
   if (!wallet) return res.status(400).json({ error: 'wallet required' });
 
   try {
-    // 1️⃣ Get assets in wallet
+    // 1️⃣ Get all assets in the wallet
     const assetsResp = await fetch(`${RPC}/v1/chain/get_table_rows`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -45,12 +45,24 @@ app.get('/api/pandas', async (req, res) => {
 
     const assetsData = await assetsResp.json();
 
-    // Filter by collection ID
-    const pandas = (assetsData.rows || []).filter(a => a.collection === COLLECTION_ID);
+    console.log(`📝 Wallet assets for ${wallet}:`, assetsData.rows);
 
-    if (!pandas.length) return res.json([]);
+    // 2️⃣ Filter only Proton Pandas
+    const pandas = (assetsData.rows || []).filter(
+      a => a.collection_name === COLLECTION_NAME || a.collection === COLLECTION_NAME
+    );
 
-    // 2️⃣ Fetch templates (batch)
+    if (!pandas.length) {
+      console.log('⚠️ No Proton Pandas found in wallet.');
+      return res.json([]);
+    }
+
+    console.log(`✅ Found ${pandas.length} Proton Pandas:`, pandas.map(p => ({
+      asset_id: p.asset_id,
+      template_id: p.template_id
+    })));
+
+    // 3️⃣ Fetch templates for these assets
     const templateIds = [...new Set(pandas.map(p => p.template_id))];
 
     const templatesResp = await fetch(`${RPC}/v1/chain/get_table_rows`, {
@@ -59,7 +71,7 @@ app.get('/api/pandas', async (req, res) => {
       body: JSON.stringify({
         json: true,
         code: 'atomicassets',
-        scope: COLLECTION_ID,
+        scope: COLLECTION_NAME,
         table: 'templates',
         lower_bound: Math.min(...templateIds),
         upper_bound: Math.max(...templateIds),
@@ -70,15 +82,14 @@ app.get('/api/pandas', async (req, res) => {
     const templatesData = await templatesResp.json();
     const templateMap = {};
 
+    // 4️⃣ Extract images from templates
     templatesData.rows.forEach(t => {
       let img = null;
 
-      // Try common places for the image
       if (t.immutable_data) {
-        img = t.immutable_data.img || t.immutable_data.image || null;
+        img = t.immutable_data.img || t.immutable_data.image || t.immutable_data.image_url || null;
       }
 
-      // Fallback: template media array
       if (!img && t.data?.media?.length > 0) {
         img = t.data.media[0].url;
       }
@@ -90,7 +101,7 @@ app.get('/api/pandas', async (req, res) => {
       templateMap[t.template_id] = resolveImage(img);
     });
 
-    // 3️⃣ Return final NFT objects
+    // 5️⃣ Return final NFT objects
     const result = pandas.map(p => ({
       asset_id: p.asset_id,
       template_id: p.template_id,
@@ -98,15 +109,15 @@ app.get('/api/pandas', async (req, res) => {
       image: templateMap[p.template_id] || 'https://via.placeholder.com/150?text=No+Image'
     }));
 
-    console.log(`✅ Returning ${result.length} Proton Pandas`);
+    console.log(`🐼 Returning ${result.length} Proton Pandas`);
     res.json(result);
 
   } catch (err) {
-    console.error(err);
+    console.error('❌ Backend error:', err);
     res.status(500).json({ error: err.message });
   }
 });
 
 app.listen(PORT, () => {
-  console.log('🐼 Panda backend LIVE — images resolved correctly');
+  console.log('🐼 Panda backend LIVE — XPR Network official');
 });
