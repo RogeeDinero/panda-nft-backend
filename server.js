@@ -17,7 +17,6 @@ app.get('/api/pandas', async (req, res) => {
   if (!wallet) return res.status(400).json({ error: 'wallet required' });
 
   try {
-    // Query ALL assets for this wallet from atomicassets contract
     const resp = await fetch(`${RPC}/v1/chain/get_table_rows`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -36,20 +35,43 @@ app.get('/api/pandas', async (req, res) => {
 
     console.log(`Found ${assets.length} total assets for ${wallet}`);
 
-    // Filter for Proton Pandas ONLY (collection_name = 144534352512)
-    const pandas = assets
-      .filter(asset => asset.collection_name === '144534352512')
+    // *** DEBUG: Show ALL collection_names in your wallet ***
+    const collections = {};
+    assets.forEach(asset => {
+      if (asset.collection_name) {
+        collections[asset.collection_name] = (collections[asset.collection_name] || 0) + 1;
+      }
+    });
+
+    console.log('ALL COLLECTIONS IN WALLET:', collections);
+
+    // Show assets that MIGHT be pandas (have panda in name or common panda collection names)
+    const potentialPandas = assets.filter(asset => {
+      const isPandaCollection = asset.collection_name && (
+        asset.collection_name.includes('panda') || 
+        asset.collection_name.includes('xprpandas') ||
+        asset.name?.toLowerCase().includes('panda')
+      );
+      return isPandaCollection;
+    });
+
+    console.log('POTENTIAL PANDAS:', potentialPandas.length);
+    potentialPandas.forEach(p => {
+      console.log(`- ${p.asset_id}: ${p.name} (${p.collection_name})`);
+    });
+
+    // Return ALL assets with images for now (so you can see them)
+    const allWithImages = assets
       .map(asset => {
-        let name = asset.name || 'Proton Panda';
+        let name = asset.name || 'NFT';
         let img = '';
 
-        // Try all possible image locations
+        // Try image fields
         if (asset.data?.img) img = asset.data.img;
         else if (asset.data?.image) img = asset.data.image;
         else if (asset.template?.immutable_data?.img) img = asset.template.immutable_data.img;
         else if (asset.template?.immutable_data?.image) img = asset.template.immutable_data.image;
 
-        // Fix IPFS
         if (img?.startsWith('ipfs://')) {
           img = `https://ipfs.neftyblocks.io/ipfs/${img.slice(7)}`;
         } else if (img && !img.startsWith('http')) {
@@ -58,16 +80,18 @@ app.get('/api/pandas', async (req, res) => {
 
         return {
           asset_id: asset.asset_id,
-          template_id: asset.template_id || asset.template?.template_id,
           collection_name: asset.collection_name,
           name,
-          image: img
+          image: img,
+          // Debug info
+          hasPandaName: name.toLowerCase().includes('panda'),
+          debug: { collection_name: asset.collection_name }
         };
       })
-      .filter(p => p.image); // Only return NFTs with images
+      .filter(p => p.image);
 
-    console.log(`✅ Found ${pandas.length} Proton Pandas for ${wallet}`);
-    res.json(pandas);
+    console.log(`✅ Returning ${allWithImages.length} NFTs with images`);
+    res.json(allWithImages);
   } catch (err) {
     console.error('Error:', err.message);
     res.status(500).json({ error: err.message });
