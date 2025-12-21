@@ -1,8 +1,14 @@
-const express = require('express');
-const cors = require('cors');
+// server.js
+import express from 'express';
+import cors from 'cors';
+import fetch from 'node-fetch';
 
 const app = express();
 const PORT = process.env.PORT || 10000;
+
+// Environment variables
+const COLLECTION_NAME = process.env.COLLECTION_NAME || 'Proton Pandas';
+const RPC_ENDPOINT = process.env.RPC_ENDPOINT || 'https://proton.greymass.com';
 
 // Allow requests from your frontend domains
 app.use(cors({
@@ -21,26 +27,26 @@ function resolveImage(img) {
   return img;
 }
 
-// AtomicAssets API base
-const ATOMICASSETS_API = 'https://wax.api.atomicassets.io/atomicassets/v1'; // Proton network uses same structure
+// Proton AtomicAssets API endpoint
+const ATOMICASSETS_API = 'https://proton.api.atomicassets.io/atomicassets/v1';
 
 app.get('/api/pandas', async (req, res) => {
   const { wallet } = req.query;
   if (!wallet) return res.status(400).json({ error: 'wallet required' });
 
   try {
-    // 1️⃣ Fetch assets owned by wallet
-    const assetsResp = await fetch(`${ATOMICASSETS_API}/assets?owner=${wallet}&collection_name=protonpandas&limit=100`);
-    const assetsData = await assetsResp.json();
+    // Fetch assets for this wallet in your collection
+    const url = `${ATOMICASSETS_API}/assets?owner=${wallet}&collection_name=${COLLECTION_NAME.replace(/ /g,'').toLowerCase()}&limit=100`;
+    const response = await fetch(url);
+    const data = await response.json();
 
-    if (!assetsData || !assetsData.data || assetsData.data.length === 0) {
+    if (!data || !data.data || data.data.length === 0) {
       return res.json([]);
     }
 
-    // 2️⃣ Map assets to simplified structure for front end
-    const nfts = assetsData.data.map(asset => {
-      const templateData = asset.data || {};
-      const img = templateData.img || templateData.image || asset.template?.immutable_data?.img || asset.template?.immutable_data?.image || null;
+    // Map assets to a simple structure for front end
+    const nfts = data.data.map(asset => {
+      const img = asset.data?.img || asset.data?.image || asset.template?.immutable_data?.img || asset.template?.immutable_data?.image || null;
 
       return {
         asset_id: asset.asset_id,
