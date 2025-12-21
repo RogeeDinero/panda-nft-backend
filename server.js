@@ -10,71 +10,66 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// OFFICIAL XPR AtomicAssets API (from XPR-Market repo)
-const ATOMIC_API = 'https://proton.api.atomicassets.io/atomicassets/v1';
+const RPC = 'https://proton.greymass.com';
 
 app.get('/api/pandas', async (req, res) => {
   const { wallet } = req.query;
   if (!wallet) return res.status(400).json({ error: 'wallet required' });
 
   try {
-    // Proton Pandas collection_name from your NeftyBlocks URL
-    const assetsUrl = `${ATOMIC_API}/assets?owner=${encodeURIComponent(wallet)}&collection_name=144534352512&limit=100`;
-    
-    console.log('Fetching:', assetsUrl);
-    const assetsResp = await fetch(assetsUrl);
-    
-    if (!assetsResp.ok) {
-      console.log('Assets failed:', assetsResp.status, await assetsResp.text());
-      return res.status(502).json({ error: 'Assets API failed', status: assetsResp.status });
-    }
+    // Query ALL assets for this wallet from atomicassets contract
+    const resp = await fetch(`${RPC}/v1/chain/get_table_rows`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        json: true,
+        code: 'atomicassets',
+        scope: wallet,
+        table: 'assets',
+        limit: 100
+      })
+    });
 
-    const assetsData = await assetsResp.json();
-    const assets = assetsData.data || [];
+    if (!resp.ok) throw new Error(`RPC failed: ${resp.status}`);
+    const data = await resp.json();
+    const assets = data.rows || [];
 
-    if (assets.length === 0) {
-      return res.json([]);
-    }
+    console.log(`Found ${assets.length} total assets for ${wallet}`);
 
-    // Get templates for images (parallel fetches)
-    const templateIds = [...new Set(assets.map(a => a.template_id))];
-    const templatePromises = templateIds.slice(0, 20).map(id => 
-      fetch(`${ATOMIC_API}/templates/${id}`)
-        .then(r => r.ok ? r.json() : null)
-        .catch(() => null)
-    );
+    // Filter for Proton Pandas ONLY (collection_name = 144534352512)
+    const pandas = assets
+      .filter(asset => asset.collection_name === '144534352512')
+      .map(asset => {
+        let name = asset.name || 'Proton Panda';
+        let img = '';
 
-    const templates = (await Promise.all(templatePromises)).filter(Boolean);
-    
-    // Map to clean data
-    const pandas = assets.map(asset => {
-      const template = templates.find(t => t.template_id === asset.template_id);
-      
-      let name = asset.name || template?.immutable_data?.name || 'Proton Panda';
-      let img = template?.immutable_data?.img || 
-                template?.immutable_data?.image || 
-                asset.data?.img || 
-                asset.data?.image || '';
+        // Try all possible image locations
+        if (asset.data?.img) img = asset.data.img;
+        else if (asset.data?.image) img = asset.data.image;
+        else if (asset.template?.immutable_data?.img) img = asset.template.immutable_data.img;
+        else if (asset.template?.immutable_data?.image) img = asset.template.immutable_data.image;
 
-      // Fix IPFS URLs
-      if (img?.startsWith('ipfs://')) {
-        img = `https://ipfs.neftyblocks.io/ipfs/${img.slice(7)}`;
-      } else if (img && !img.startsWith('http')) {
-        img = `https://ipfs.neftyblocks.io/ipfs/${img}`;
-      }
+        // Fix IPFS
+        if (img?.startsWith('ipfs://')) {
+          img = `https://ipfs.neftyblocks.io/ipfs/${img.slice(7)}`;
+        } else if (img && !img.startsWith('http')) {
+          img = `https://ipfs.neftyblocks.io/ipfs/${img}`;
+        }
 
-      return {
-        asset_id: asset.asset_id,
-        template_id: asset.template_id,
-        name,
-        image: img
-      };
-    }).filter(p => p.image); // Only with images
+        return {
+          asset_id: asset.asset_id,
+          template_id: asset.template_id || asset.template?.template_id,
+          collection_name: asset.collection_name,
+          name,
+          image: img
+        };
+      })
+      .filter(p => p.image); // Only return NFTs with images
 
-    console.log(`✅ Found ${pandas.length} pandas for ${wallet}`);
+    console.log(`✅ Found ${pandas.length} Proton Pandas for ${wallet}`);
     res.json(pandas);
   } catch (err) {
-    console.error('Error:', err);
+    console.error('Error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
