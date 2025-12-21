@@ -17,8 +17,8 @@ app.get('/api/pandas', async (req, res) => {
   if (!wallet) return res.status(400).json({ error: 'wallet required' });
 
   try {
-    // Get your 3 pandas
-    const resp = await fetch(`${RPC}/v1/chain/get_table_rows`, {
+    // Step 1: Get your 3 pandas
+    const assetsResp = await fetch(`${RPC}/v1/chain/get_table_rows`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -30,44 +30,69 @@ app.get('/api/pandas', async (req, res) => {
       })
     });
 
-    const data = await resp.json();
-    const pandas = (data.rows || []).filter(a => a.collection_name === '144534352512');
+    const assetsData = await assetsResp.json();
+    const pandas = (assetsData.rows || []).filter(a => a.collection_name === '144534352512');
+
+    console.log(`✅ Found ${pandas.length} Proton Pandas for ${wallet}`);
 
     if (pandas.length === 0) return res.json([]);
 
-    // Get FIRST panda's template to inspect structure
-    const firstPanda = pandas[0];
-    console.log('FIRST PANDA:', firstPanda.asset_id, firstPanda.template_id);
+    // Step 2: Get ALL templates for these pandas (collection scope)
+    const templateIds = [...new Set(pandas.map(p => p.template_id))];
+    console.log('Template IDs:', templateIds);
 
-    const templateResp = await fetch(`${RPC}/v1/chain/get_table_rows`, {
+    const templatesResp = await fetch(`${RPC}/v1/chain/get_table_rows`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         json: true,
         code: 'atomicassets',
-        scope: 'atomicassets',
+        scope: '144534352512',  // <-- COLLECTION SCOPE (not 'atomicassets')
         table: 'templates',
-        lower_bound: firstPanda.template_id,
-        upper_bound: firstPanda.template_id,
-        limit: 1
+        limit: 100
       })
     });
 
-    const templateData = await templateResp.json();
-    const template = templateData.rows[0];
+    const templatesData = await templatesResp.json();
+    const templates = templatesData.rows || [];
+    console.log(`Found ${templates.length} templates`);
 
-    console.log('TEMPLATE STRUCTURE:', JSON.stringify(template, null, 2));
+    // Step 3: Match assets to templates and extract images
+    const pandasWithImages = pandas.map(panda => {
+      const template = templates.find(t => t.template_id == panda.template_id);
+      
+      console.log(`Panda ${panda.asset_id} template:`, template?.template_id, template?.immutable_data);
 
-    // For now, return placeholder images so frontend works
-    const result = pandas.map(panda => ({
-      asset_id: panda.asset_id,
-      template_id: panda.template_id,
-      name: panda.name || `Proton Panda #${panda.asset_id.slice(-4)}`,
-      image: `https://via.placeholder.com/300x300/000/fff?text=Panda+${panda.asset_id.slice(-4)}`
-    }));
+      let name = panda.name || template?.immutable_data?.name || `Proton Panda #${panda.asset_id.slice(-4)}`;
+      let img = '';
 
-    console.log(`✅ Returning ${result.length} pandas with placeholder images`);
-    res.json(result);
+      // Try ALL possible image locations
+      const data = template?.immutable_data || panda.data || {};
+      img = data.img || data.image || data.Image || data.IMG;
+
+      // Check serialized data (common for complex NFTs)
+      if (!img && template?.immutable_serialized_data) {
+        console.log('Has serialized data, needs decoding');
+        // For now use template_id as fallback image
+        img = `https://ipfs.neftyblocks.io/ipfs/QmYSE12nTMvcqaryBe9daQGAmSxp8BzUrR2LK4GWEx3Wic/${template.template_id}.png`;
+      }
+
+      // Fix IPFS
+      if (img?.startsWith('ipfs://')) {
+        img = `https://ipfs.neftyblocks.io/ipfs/${img.slice(7)}`;
+      }
+
+      return {
+        asset_id: panda.asset_id,
+        template_id: panda.template_id,
+        collection_name: panda.collection_name,
+        name,
+        image: img || `https://via.placeholder.com/300x300/333/fff?text=P#${panda.template_id}`
+      };
+    });
+
+    console.log(`✅ Returning ${pandasWithImages.length} pandas`);
+    res.json(pandasWithImages);
   } catch (err) {
     console.error('Error:', err.message);
     res.status(500).json({ error: err.message });
