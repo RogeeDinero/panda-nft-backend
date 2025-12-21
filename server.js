@@ -15,7 +15,7 @@ app.use(cors({
 }));
 
 const RPC = 'https://proton.greymass.com';
-const COLLECTION = 'Proton Pandas'; // correct name with space and capitalization
+const COLLECTION_ID = '144534352512'; // numeric collection id for Proton Pandas
 
 // Helper: IPFS → HTTPS
 function resolveImage(img) {
@@ -46,7 +46,9 @@ app.get('/api/pandas', async (req, res) => {
     const assetsData = await assetsResp.json();
     console.log(`📝 Wallet assets for ${wallet}:`, assetsData.rows);
 
-    const pandas = (assetsData.rows || []).filter(a => a.collection_name === COLLECTION);
+    const pandas = (assetsData.rows || []).filter(
+      a => a.collection_name === COLLECTION_ID
+    );
 
     if (!pandas.length) {
       console.log('⚠️ No Proton Pandas found in wallet.');
@@ -62,7 +64,7 @@ app.get('/api/pandas', async (req, res) => {
       body: JSON.stringify({
         json: true,
         code: 'atomicassets',
-        scope: COLLECTION,
+        scope: COLLECTION_ID,
         table: 'templates',
         lower_bound: Math.min(...templateIds),
         upper_bound: Math.max(...templateIds),
@@ -74,8 +76,7 @@ app.get('/api/pandas', async (req, res) => {
     const templateMap = {};
 
     templatesData.rows.forEach(t => {
-      // 🔍 Inspect raw template to find image key
-      console.log(`Template ${t.template_id} raw:`, t);
+      console.log(`Template ${t.template_id} raw:`, t); // inspect for actual image key
 
       let img = null;
 
