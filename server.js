@@ -25,14 +25,6 @@ function resolveImage(img) {
   return img;
 }
 
-// Helper: Pick correct image key from template data
-function extractTemplateImage(template) {
-  if (!template || !template.immutable_data) return null;
-  const data = template.immutable_data;
-  // Try common keys in order
-  return resolveImage(data.img || data.image || data.image_url || null);
-}
-
 app.get('/api/pandas', async (req, res) => {
   const { wallet } = req.query;
   if (!wallet) return res.status(400).json({ error: 'wallet required' });
@@ -78,8 +70,21 @@ app.get('/api/pandas', async (req, res) => {
     const templatesData = await templatesResp.json();
     const templateMap = {};
 
+    // ✅ Improved image extraction
     templatesData.rows.forEach(t => {
-      templateMap[t.template_id] = extractTemplateImage(t);
+      let img = null;
+
+      // Try common keys
+      if (t.immutable_data) {
+        img = t.immutable_data.img || t.immutable_data.image || null;
+      }
+
+      // Fallback to media array if exists
+      if (!img && t.media && t.media.length > 0) {
+        img = t.media[0].url;
+      }
+
+      templateMap[t.template_id] = resolveImage(img);
     });
 
     // 3️⃣ Return final NFT objects
