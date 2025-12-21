@@ -17,7 +17,7 @@ app.get('/api/pandas', async (req, res) => {
   if (!wallet) return res.status(400).json({ error: 'wallet required' });
 
   try {
-    // Step 1: Get your 3 pandas
+    // Get your 3 pandas
     const assetsResp = await fetch(`${RPC}/v1/chain/get_table_rows`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -33,65 +33,21 @@ app.get('/api/pandas', async (req, res) => {
     const assetsData = await assetsResp.json();
     const pandas = (assetsData.rows || []).filter(a => a.collection_name === '144534352512');
 
-    console.log(`✅ Found ${pandas.length} Proton Pandas for ${wallet}`);
+    console.log(`✅ Found ${pandas.length} Proton Pandas for ${wallet}:`, pandas.map(p => p.asset_id));
 
     if (pandas.length === 0) return res.json([]);
 
-    // Step 2: Get ALL templates for these pandas (collection scope)
-    const templateIds = [...new Set(pandas.map(p => p.template_id))];
-    console.log('Template IDs:', templateIds);
+    // Use NeftyBlocks image pattern - THEY HAVE THE IMAGES!
+    // https://proton.neftyblocks.com/marketplace/asset/4398046895910 (your panda asset_id)
+    const pandasWithImages = pandas.map(panda => ({
+      asset_id: panda.asset_id,
+      template_id: panda.template_id,
+      collection_name: panda.collection_name,
+      name: panda.name || `Proton Panda #${panda.asset_id.slice(-6)}`,
+      image: `https://resizer.neftyblocks.com/resize/300/300/https://ipfs.neftyblocks.io/ipfs/QmYSE12nTMvcqaryBe9daQGAmSxp8BzUrR2LK4GWEx3Wic/${panda.template_id}.png`
+    }));
 
-    const templatesResp = await fetch(`${RPC}/v1/chain/get_table_rows`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        json: true,
-        code: 'atomicassets',
-        scope: '144534352512',  // <-- COLLECTION SCOPE (not 'atomicassets')
-        table: 'templates',
-        limit: 100
-      })
-    });
-
-    const templatesData = await templatesResp.json();
-    const templates = templatesData.rows || [];
-    console.log(`Found ${templates.length} templates`);
-
-    // Step 3: Match assets to templates and extract images
-    const pandasWithImages = pandas.map(panda => {
-      const template = templates.find(t => t.template_id == panda.template_id);
-      
-      console.log(`Panda ${panda.asset_id} template:`, template?.template_id, template?.immutable_data);
-
-      let name = panda.name || template?.immutable_data?.name || `Proton Panda #${panda.asset_id.slice(-4)}`;
-      let img = '';
-
-      // Try ALL possible image locations
-      const data = template?.immutable_data || panda.data || {};
-      img = data.img || data.image || data.Image || data.IMG;
-
-      // Check serialized data (common for complex NFTs)
-      if (!img && template?.immutable_serialized_data) {
-        console.log('Has serialized data, needs decoding');
-        // For now use template_id as fallback image
-        img = `https://ipfs.neftyblocks.io/ipfs/QmYSE12nTMvcqaryBe9daQGAmSxp8BzUrR2LK4GWEx3Wic/${template.template_id}.png`;
-      }
-
-      // Fix IPFS
-      if (img?.startsWith('ipfs://')) {
-        img = `https://ipfs.neftyblocks.io/ipfs/${img.slice(7)}`;
-      }
-
-      return {
-        asset_id: panda.asset_id,
-        template_id: panda.template_id,
-        collection_name: panda.collection_name,
-        name,
-        image: img || `https://via.placeholder.com/300x300/333/fff?text=P#${panda.template_id}`
-      };
-    });
-
-    console.log(`✅ Returning ${pandasWithImages.length} pandas`);
+    console.log(`✅ Returning ${pandasWithImages.length} pandas with NeftyBlocks images`);
     res.json(pandasWithImages);
   } catch (err) {
     console.error('Error:', err.message);
@@ -100,5 +56,5 @@ app.get('/api/pandas', async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`🐼 Panda backend on ${PORT}`);
+  console.log(`🐼 Panda backend LIVE on ${PORT}`);
 });
