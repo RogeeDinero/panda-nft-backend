@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
-const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
+const fetch = (...args) =>
+  import('node-fetch').then(({ default: fetch }) => fetch(...args));
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -14,7 +15,7 @@ app.use(cors({
 }));
 
 const RPC = 'https://proton.greymass.com';
-const COLLECTION = 'Proton Pandas'; // exact collection name
+const COLLECTION_ID = '144534352512'; // Proton Pandas collection identifier
 
 // Helper: IPFS → HTTPS
 function resolveImage(img) {
@@ -43,24 +44,25 @@ app.get('/api/pandas', async (req, res) => {
     });
 
     const assetsData = await assetsResp.json();
-    const walletAssets = assetsData.rows || [];
+    console.log(`📝 Wallet assets for ${wallet}:`, assetsData.rows);
 
-    console.log(`📝 Wallet assets for ${wallet}:`, walletAssets);
+    // Filter Proton Pandas by collection identifier
+    const pandas = (assetsData.rows || []).filter(a => a.collection_name === COLLECTION_ID);
 
-    // Filter only Proton Pandas
-    const pandas = walletAssets.filter(a => a.collection_name === COLLECTION);
-    if (!pandas.length) return res.json([]);
+    if (!pandas.length) {
+      console.warn('⚠️ No Proton Pandas found in wallet.');
+      return res.json([]);
+    }
 
-    // 2️⃣ Fetch templates for these pandas
+    // 2️⃣ Fetch templates
     const templateIds = [...new Set(pandas.map(p => p.template_id))];
-
     const templatesResp = await fetch(`${RPC}/v1/chain/get_table_rows`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         json: true,
         code: 'atomicassets',
-        scope: COLLECTION,
+        scope: COLLECTION_ID,
         table: 'templates',
         lower_bound: Math.min(...templateIds),
         upper_bound: Math.max(...templateIds),
@@ -72,21 +74,19 @@ app.get('/api/pandas', async (req, res) => {
     const templateMap = {};
 
     templatesData.rows.forEach(t => {
-      console.log(`Template ${t.template_id} raw:`, t);
+      console.log(`Template ${t.template_id} raw:`, t); // DEBUG
 
       let img = null;
 
-      // Try multiple common places for the image
-      if (t.immutable_data) {
-        img = t.immutable_data.img || t.immutable_data.image || t.immutable_data.image_url || t.immutable_data.uri || null;
-      }
-      if (!img && t.media?.length > 0) img = t.media[0].url;
+      // Try common places for the image
+      if (t.immutable_data) img = t.immutable_data.img || t.immutable_data.image || null;
       if (!img && t.data?.media?.length > 0) img = t.data.media[0].url;
+      if (!img && t.media?.length > 0) img = t.media[0].url;
 
       templateMap[t.template_id] = resolveImage(img);
     });
 
-    // 3️⃣ Build final array
+    // 3️⃣ Return final NFT objects
     const result = pandas.map(p => ({
       asset_id: p.asset_id,
       template_id: p.template_id,
@@ -104,6 +104,5 @@ app.get('/api/pandas', async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log('🐼 Panda backend LIVE — images resolved correctly');
+  console.log('🐼 Panda backend LIVE — XPR Network official');
 });
-
