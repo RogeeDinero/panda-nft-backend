@@ -1,62 +1,123 @@
-import express from "express";
-import fetch from "node-fetch";
-import cors from "cors";
+const express = require('express');
+const cors = require('cors');
+const fetch = (...args) =>
+  import('node-fetch').then(({ default: fetch }) => fetch(...args));
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 
-app.use(cors());
-app.use(express.json());
+app.use(cors({
+  origin: [
+    'http://localhost:5500',
+    'http://pandania.xyz',
+    'https://pandania.xyz'
+  ]
+}));
 
-const COLLECTION_ID = "144534352512"; // Proton Pandas collection
+const RPC = 'https://proton.greymass.com';
+const COLLECTION_NAME = 'Proton Pandas'; // correct collection name
 
-// Helper: fetch all NFTs in the collection
-async function getProtonPandas(wallet) {
-  try {
-    const url = `https://nft.xprnetwork.org/${COLLECTION_ID}`;
-    const resp = await fetch(url);
-
-    if (!resp.ok) {
-      throw new Error(`HTTP error ${resp.status}`);
-    }
-
-    const data = await resp.json();
-
-    // Filter NFTs owned by the requested wallet
-    const userNFTs = data.filter(nft => nft.owner === wallet);
-
-    // Map to simplified frontend format
-    return userNFTs.map(nft => ({
-      name: nft.name || `Panda #${nft.asset_id}`,
-      image: nft.image || "",
-      asset_id: nft.asset_id,
-      collection_id: nft.collection_id,
-      serial: nft.serial,
-      edition_size: nft.edition_size,
-      desc: nft.desc || "",
-    }));
-
-  } catch (err) {
-    console.error("Error fetching pandas:", err);
-    throw err;
-  }
+// Helper: IPFS → HTTPS
+function resolveImage(img) {
+  if (!img) return null;
+  if (img.startsWith('ipfs://')) return img.replace('ipfs://', 'https://ipfs.io/ipfs/');
+  if (img.startsWith('Qm')) return `https://ipfs.io/ipfs/${img}`;
+  return img;
 }
 
-// API endpoint
-app.get("/api/pandas", async (req, res) => {
-  const wallet = req.query.wallet;
-  if (!wallet) {
-    return res.status(400).json({ error: "Wallet query param is required" });
-  }
+app.get('/api/pandas', async (req, res) => {
+  const { wallet } = req.query;
+  if (!wallet) return res.status(400).json({ error: 'wallet required' });
 
   try {
-    const pandas = await getProtonPandas(wallet);
-    res.json(pandas);
+    // 1️⃣ Get all assets in the wallet
+    const assetsResp = await fetch(`${RPC}/v1/chain/get_table_rows`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        json: true,
+        code: 'atomicassets',
+        scope: wallet,
+        table: 'assets',
+        limit: 100
+      })
+    });
+
+    const assetsData = await assetsResp.json();
+
+    console.log(`📝 Wallet assets for ${wallet}:`, assetsData.rows);
+
+    // 2️⃣ Filter only Proton Pandas
+    const pandas = (assetsData.rows || []).filter(
+      a => a.collection_name === COLLECTION_NAME || a.collection === COLLECTION_NAME
+    );
+
+    if (!pandas.length) {
+      console.log('⚠️ No Proton Pandas found in wallet.');
+      return res.json([]);
+    }
+
+    console.log(`✅ Found ${pandas.length} Proton Pandas:`, pandas.map(p => ({
+      asset_id: p.asset_id,
+      template_id: p.template_id
+    })));
+
+    // 3️⃣ Fetch templates for these assets
+    const templateIds = [...new Set(pandas.map(p => p.template_id))];
+
+    const templatesResp = await fetch(`${RPC}/v1/chain/get_table_rows`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        json: true,
+        code: 'atomicassets',
+        scope: COLLECTION_NAME,
+        table: 'templates',
+        lower_bound: Math.min(...templateIds),
+        upper_bound: Math.max(...templateIds),
+        limit: 100
+      })
+    });
+
+    const templatesData = await templatesResp.json();
+    const templateMap = {};
+
+    // 4️⃣ Extract images from templates
+    templatesData.rows.forEach(t => {
+      let img = null;
+
+      if (t.immutable_data) {
+        img = t.immutable_data.img || t.immutable_data.image || t.immutable_data.image_url || null;
+      }
+
+      if (!img && t.data?.media?.length > 0) {
+        img = t.data.media[0].url;
+      }
+
+      if (!img && t.media?.length > 0) {
+        img = t.media[0].url;
+      }
+
+      templateMap[t.template_id] = resolveImage(img);
+    });
+
+    // 5️⃣ Return final NFT objects
+    const result = pandas.map(p => ({
+      asset_id: p.asset_id,
+      template_id: p.template_id,
+      name: `Proton Panda #${p.template_id}`,
+      image: templateMap[p.template_id] || 'https://via.placeholder.com/150?text=No+Image'
+    }));
+
+    console.log(`🐼 Returning ${result.length} Proton Pandas`);
+    res.json(result);
+
   } catch (err) {
-    res.status(500).json({ error: "Failed to fetch Proton Pandas" });
+    console.error('❌ Backend error:', err);
+    res.status(500).json({ error: err.message });
   }
 });
 
 app.listen(PORT, () => {
-  console.log(`Panda NFT backend running on port ${PORT}`);
+  console.log('🐼 Panda backend LIVE — XPR Network official');
 });
