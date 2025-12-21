@@ -57,7 +57,7 @@ app.get('/api/pandas', async (req, res) => {
 });
 
 /**
- * STEP 2: IMAGE PROXY (THIS IS THE MAGIC)
+ * STEP 2: IMAGE PROXY (STREAM CORRECT CONTENT TYPE)
  */
 app.get('/api/panda-image/:templateId', async (req, res) => {
   const { templateId } = req.params;
@@ -72,7 +72,10 @@ app.get('/api/panda-image/:templateId', async (req, res) => {
       return res.status(404).send('Image not found');
     }
 
-    res.setHeader('Content-Type', 'image/png');
+    // Stream the actual content type from the upstream response
+    const contentType = imgResp.headers.get('content-type') || 'application/octet-stream';
+    res.setHeader('Content-Type', contentType);
+
     imgResp.body.pipe(res);
   } catch (err) {
     console.error('Image proxy error:', err);
