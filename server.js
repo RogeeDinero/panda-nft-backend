@@ -33,65 +33,69 @@ app.get('/api/pandas', async (req, res) => {
     const data = await resp.json();
     const assets = data.rows || [];
 
-    console.log(`Found ${assets.length} total assets for ${wallet}`);
+    // Filter ONLY Proton Pandas (your 3 NFTs)
+    const pandas = assets.filter(asset => asset.collection_name === '144534352512');
 
-    // *** DEBUG: Show ALL collection_names in your wallet ***
-    const collections = {};
-    assets.forEach(asset => {
-      if (asset.collection_name) {
-        collections[asset.collection_name] = (collections[asset.collection_name] || 0) + 1;
-      }
-    });
+    console.log(`✅ Found ${pandas.length} Proton Pandas for ${wallet}`);
 
-    console.log('ALL COLLECTIONS IN WALLET:', collections);
+    if (pandas.length === 0) {
+      return res.json([]);
+    }
 
-    // Show assets that MIGHT be pandas (have panda in name or common panda collection names)
-    const potentialPandas = assets.filter(asset => {
-      const isPandaCollection = asset.collection_name && (
-        asset.collection_name.includes('panda') || 
-        asset.collection_name.includes('xprpandas') ||
-        asset.name?.toLowerCase().includes('panda')
-      );
-      return isPandaCollection;
-    });
+    // For each panda, get template data (where images live)
+    const pandasWithImages = [];
+    for (const asset of pandas) {
+      try {
+        // Get template for this asset
+        const templateResp = await fetch(`${RPC}/v1/chain/get_table_rows`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            json: true,
+            code: 'atomicassets',
+            scope: 'atomicassets',
+            table: 'templates',
+            lower_bound: asset.template_id,
+            upper_bound: asset.template_id,
+            limit: 1
+          })
+        });
 
-    console.log('POTENTIAL PANDAS:', potentialPandas.length);
-    potentialPandas.forEach(p => {
-      console.log(`- ${p.asset_id}: ${p.name} (${p.collection_name})`);
-    });
+        const templateData = await templateResp.json();
+        const template = templateData.rows[0];
 
-    // Return ALL assets with images for now (so you can see them)
-    const allWithImages = assets
-      .map(asset => {
-        let name = asset.name || 'NFT';
+        let name = asset.name || template?.immutable_data?.name || 'Proton Panda';
         let img = '';
 
-        // Try image fields
-        if (asset.data?.img) img = asset.data.img;
+        // Proton Pandas images are often in immutable_data or serialized_data
+        if (template?.immutable_data?.img) img = template.immutable_data.img;
+        else if (template?.immutable_data?.image) img = template.immutable_data.image;
+        else if (asset.data?.img) img = asset.data.img;
         else if (asset.data?.image) img = asset.data.image;
-        else if (asset.template?.immutable_data?.img) img = asset.template.immutable_data.img;
-        else if (asset.template?.immutable_data?.image) img = asset.template.immutable_data.image;
 
+        // Fix IPFS URLs
         if (img?.startsWith('ipfs://')) {
           img = `https://ipfs.neftyblocks.io/ipfs/${img.slice(7)}`;
         } else if (img && !img.startsWith('http')) {
           img = `https://ipfs.neftyblocks.io/ipfs/${img}`;
         }
 
-        return {
-          asset_id: asset.asset_id,
-          collection_name: asset.collection_name,
-          name,
-          image: img,
-          // Debug info
-          hasPandaName: name.toLowerCase().includes('panda'),
-          debug: { collection_name: asset.collection_name }
-        };
-      })
-      .filter(p => p.image);
+        if (img) {
+          pandasWithImages.push({
+            asset_id: asset.asset_id,
+            template_id: asset.template_id,
+            collection_name: asset.collection_name,
+            name,
+            image: img
+          });
+        }
+      } catch (e) {
+        console.log(`Template fetch failed for ${asset.asset_id}`);
+      }
+    }
 
-    console.log(`✅ Returning ${allWithImages.length} NFTs with images`);
-    res.json(allWithImages);
+    console.log(`✅ Returning ${pandasWithImages.length} Proton Pandas with images`);
+    res.json(pandasWithImages);
   } catch (err) {
     console.error('Error:', err.message);
     res.status(500).json({ error: err.message });
