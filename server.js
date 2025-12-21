@@ -17,7 +17,7 @@ app.use(cors({
 const RPC = 'https://proton.greymass.com';
 const COLLECTION_ID = '144534352512'; // Proton Pandas collection identifier
 
-// Helper: IPFS → HTTPS
+// Convert IPFS hash to HTTPS URL
 function resolveImage(img) {
   if (!img) return null;
   if (img.startsWith('ipfs://')) return img.replace('ipfs://', 'https://ipfs.io/ipfs/');
@@ -30,7 +30,7 @@ app.get('/api/pandas', async (req, res) => {
   if (!wallet) return res.status(400).json({ error: 'wallet required' });
 
   try {
-    // 1️⃣ Get assets in wallet
+    // 1️⃣ Fetch assets for wallet
     const assetsResp = await fetch(`${RPC}/v1/chain/get_table_rows`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -46,7 +46,7 @@ app.get('/api/pandas', async (req, res) => {
     const assetsData = await assetsResp.json();
     console.log(`📝 Wallet assets for ${wallet}:`, assetsData.rows);
 
-    // Filter Proton Pandas by collection identifier
+    // Filter Proton Pandas by collection ID
     const pandas = (assetsData.rows || []).filter(a => a.collection_name === COLLECTION_ID);
 
     if (!pandas.length) {
@@ -54,7 +54,7 @@ app.get('/api/pandas', async (req, res) => {
       return res.json([]);
     }
 
-    // 2️⃣ Fetch templates
+    // 2️⃣ Fetch template info
     const templateIds = [...new Set(pandas.map(p => p.template_id))];
     const templatesResp = await fetch(`${RPC}/v1/chain/get_table_rows`, {
       method: 'POST',
@@ -78,8 +78,10 @@ app.get('/api/pandas', async (req, res) => {
 
       let img = null;
 
-      // Try common places for the image
-      if (t.immutable_data) img = t.immutable_data.img || t.immutable_data.image || null;
+      // Look for image in immutable_data (IPFS hash)
+      if (t.immutable_data) img = t.immutable_data.image || t.immutable_data.img || null;
+
+      // Fallbacks
       if (!img && t.data?.media?.length > 0) img = t.data.media[0].url;
       if (!img && t.media?.length > 0) img = t.media[0].url;
 
@@ -105,4 +107,6 @@ app.get('/api/pandas', async (req, res) => {
 
 app.listen(PORT, () => {
   console.log('🐼 Panda backend LIVE — XPR Network official');
+});
+');
 });
