@@ -47,7 +47,7 @@ app.get('/api/pandas', async (req, res) => {
       collection_name: panda.collection_name,
       name: panda.name || `Proton Panda #${panda.template_id}`,
       // XPR Network official image URLs (from nft.xprnetwork.org/144534352512/{template_id})
-      image: `https://nft.xprnetwork.org/144534352512/${panda.template_id}/image`
+      image: `https://nft.xprnetwork.org/144534352512/${panda.template_id}`
     }));
 
     console.log(`✅ Returning ${pandasWithImages.length} pandas with XPR Network images`);
