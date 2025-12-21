@@ -15,9 +15,9 @@ app.use(cors({
 }));
 
 const RPC = 'https://proton.greymass.com';
-const COLLECTION_ID = '144534352512'; // numeric collection id for Proton Pandas
+const COLLECTION_ID = '144534352512'; // numeric ID for Proton Pandas
 
-// Helper: IPFS → HTTPS
+// Convert IPFS or raw Qm links to HTTPS
 function resolveImage(img) {
   if (!img) return null;
   if (img.startsWith('ipfs://')) return img.replace('ipfs://', 'https://ipfs.io/ipfs/');
@@ -30,7 +30,7 @@ app.get('/api/pandas', async (req, res) => {
   if (!wallet) return res.status(400).json({ error: 'wallet required' });
 
   try {
-    // 1️⃣ Get assets in wallet
+    // 1️⃣ Get all assets in the wallet
     const assetsResp = await fetch(`${RPC}/v1/chain/get_table_rows`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -46,18 +46,16 @@ app.get('/api/pandas', async (req, res) => {
     const assetsData = await assetsResp.json();
     console.log(`📝 Wallet assets for ${wallet}:`, assetsData.rows);
 
-    const pandas = (assetsData.rows || []).filter(
-      a => a.collection_name === COLLECTION_ID
-    );
+    // Filter Proton Pandas by collection ID
+    const pandas = (assetsData.rows || []).filter(a => a.collection_name === COLLECTION_ID);
 
     if (!pandas.length) {
-      console.log('⚠️ No Proton Pandas found in wallet.');
+      console.warn(`⚠️ No Proton Pandas found in wallet.`);
       return res.json([]);
     }
 
-    // 2️⃣ Fetch templates (batch)
+    // 2️⃣ Fetch all templates in batch
     const templateIds = [...new Set(pandas.map(p => p.template_id))];
-
     const templatesResp = await fetch(`${RPC}/v1/chain/get_table_rows`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -75,34 +73,28 @@ app.get('/api/pandas', async (req, res) => {
     const templatesData = await templatesResp.json();
     const templateMap = {};
 
+    // 3️⃣ Map template IDs → resolved image
     templatesData.rows.forEach(t => {
-      console.log(`Template ${t.template_id} raw:`, t); // inspect for actual image key
+      console.log(`Template ${t.template_id} raw:`, t); // 🔍 inspect exact structure
 
       let img = null;
 
-      // Try common places for the image
       if (t.immutable_data) {
         img = t.immutable_data.img || t.immutable_data.image || t.immutable_data.image_url || t.immutable_data.uri || null;
       }
 
-      // Fallback: template media array
-      if (!img && t.data?.media?.length > 0) {
-        img = t.data.media[0].url;
-      }
-
-      if (!img && t.media?.length > 0) {
-        img = t.media[0].url;
-      }
+      if (!img && t.media?.length > 0) img = t.media[0].url;
+      if (!img && t.data?.media?.length > 0) img = t.data.media[0].url;
 
       templateMap[t.template_id] = resolveImage(img);
     });
 
-    // 3️⃣ Return final NFT objects
+    // 4️⃣ Build final array with live images
     const result = pandas.map(p => ({
       asset_id: p.asset_id,
       template_id: p.template_id,
       name: `Proton Panda #${p.template_id}`,
-      image: templateMap[p.template_id] || null
+      image: templateMap[p.template_id] || null // null if no image
     }));
 
     console.log(`✅ Returning ${result.length} Proton Pandas`);
@@ -117,4 +109,3 @@ app.get('/api/pandas', async (req, res) => {
 app.listen(PORT, () => {
   console.log('🐼 Panda backend LIVE — XPR Network official');
 });
-
