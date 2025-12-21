@@ -1,24 +1,30 @@
 const express = require('express');
 const cors = require('cors');
-const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
+const fetch = (...args) =>
+  import('node-fetch').then(({ default: fetch }) => fetch(...args));
 
 const app = express();
 const PORT = process.env.PORT || 10000;
 
 app.use(cors({
-  origin: ['http://localhost:5500', 'http://pandania.xyz', 'https://pandania.xyz']
+  origin: [
+    'http://localhost:5500',
+    'http://pandania.xyz',
+    'https://pandania.xyz'
+  ]
 }));
-app.use(express.json());
 
 const RPC = 'https://proton.greymass.com';
 
+/**
+ * STEP 1: Return panda metadata + LOCAL image proxy URL
+ */
 app.get('/api/pandas', async (req, res) => {
   const { wallet } = req.query;
   if (!wallet) return res.status(400).json({ error: 'wallet required' });
 
   try {
-    // Get your 3 pandas asset_ids
-    const assetsResp = await fetch(`${RPC}/v1/chain/get_table_rows`, {
+    const resp = await fetch(`${RPC}/v1/chain/get_table_rows`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -30,34 +36,50 @@ app.get('/api/pandas', async (req, res) => {
       })
     });
 
-    const assetsData = await assetsResp.json();
-    const pandas = (assetsData.rows || []).filter(a => a.collection_name === '144534352512');
+    const data = await resp.json();
 
-    console.log(`✅ Found ${pandas.length} Proton Pandas:`, pandas.map(p => ({
+    const pandas = (data.rows || []).filter(
+      a => a.collection_name === '144534352512'
+    );
+
+    const result = pandas.map(p => ({
       asset_id: p.asset_id,
-      template_id: p.template_id
-    })));
-
-    if (pandas.length === 0) return res.json([]);
-
-    // NeftyBlocks CDN - PROVEN WORKING IMAGES
-    const pandasWithImages = pandas.map(panda => ({
-      asset_id: panda.asset_id,
-      template_id: panda.template_id,
-      collection_name: panda.collection_name,
-      name: panda.name || `Proton Panda #${panda.template_id}`,
-      // ✅ THIS WORKS - NeftyBlocks CDN with your template_ids
-      image: `https://resizer.neftyblocks.com/resize/300/300/https://ipfs.neftyblocks.io/ipfs/QmYSE12nTMvcqaryBe9daQGAmSxp8BzUrR2LK4GWEx3Wic/${panda.template_id}.png`
+      template_id: p.template_id,
+      name: p.name || `Proton Panda #${p.template_id}`,
+      image: `/api/panda-image/${p.template_id}`
     }));
 
-    console.log(`✅ Returning ${pandasWithImages.length} pandas with NeftyBlocks images`);
-    res.json(pandasWithImages);
+    res.json(result);
   } catch (err) {
-    console.error('Error:', err.message);
+    console.error(err);
     res.status(500).json({ error: err.message });
   }
 });
 
+/**
+ * STEP 2: IMAGE PROXY (THIS IS THE MAGIC)
+ */
+app.get('/api/panda-image/:templateId', async (req, res) => {
+  const { templateId } = req.params;
+
+  try {
+    const imgResp = await fetch(
+      `https://nft.xprnetwork.org/144534352512/${templateId}`,
+      { redirect: 'follow' }
+    );
+
+    if (!imgResp.ok) {
+      return res.status(404).send('Image not found');
+    }
+
+    res.setHeader('Content-Type', 'image/png');
+    imgResp.body.pipe(res);
+  } catch (err) {
+    console.error('Image proxy error:', err);
+    res.status(500).send('Image fetch failed');
+  }
+});
+
 app.listen(PORT, () => {
-  console.log(`🐼 Panda backend LIVE - NeftyBlocks CDN`);
+  console.log(`🐼 Panda backend running on port ${PORT}`);
 });
