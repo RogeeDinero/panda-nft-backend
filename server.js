@@ -79,16 +79,20 @@ app.get('/api/pandas', async (req, res) => {
     templatesData.rows.forEach(t => {
       let img = null;
 
-      // Try common places for the image
+      // Try immutable_data first
       if (t.immutable_data) {
         img = t.immutable_data.img || t.immutable_data.image || null;
+        if (!img && Array.isArray(t.immutable_data.media) && t.immutable_data.media.length > 0) {
+          img = t.immutable_data.media[0].url;
+        }
       }
 
-      // Fallback: template media array
+      // Try data.media array
       if (!img && t.data?.media?.length > 0) {
         img = t.data.media[0].url;
       }
 
+      // Try media array directly
       if (!img && t.media?.length > 0) {
         img = t.media[0].url;
       }
@@ -101,7 +105,7 @@ app.get('/api/pandas', async (req, res) => {
       asset_id: p.asset_id,
       template_id: p.template_id,
       name: `Proton Panda #${p.template_id}`,
-      image: templateMap[p.template_id] || 'https://via.placeholder.com/150?text=No+Image'
+      image: templateMap[p.template_id] || null
     }));
 
     console.log(`✅ Returning ${result.length} Proton Pandas`);
