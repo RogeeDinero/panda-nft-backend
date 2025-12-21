@@ -20,13 +20,17 @@ const COLLECTION = '144534352512';
 // Helper: IPFS → HTTPS
 function resolveImage(img) {
   if (!img) return null;
-  if (img.startsWith('ipfs://')) {
-    return img.replace('ipfs://', 'https://ipfs.io/ipfs/');
-  }
-  if (img.startsWith('Qm')) {
-    return `https://ipfs.io/ipfs/${img}`;
-  }
+  if (img.startsWith('ipfs://')) return img.replace('ipfs://', 'https://ipfs.io/ipfs/');
+  if (img.startsWith('Qm')) return `https://ipfs.io/ipfs/${img}`;
   return img;
+}
+
+// Helper: Pick correct image key from template data
+function extractTemplateImage(template) {
+  if (!template || !template.immutable_data) return null;
+  const data = template.immutable_data;
+  // Try common keys in order
+  return resolveImage(data.img || data.image || data.image_url || null);
 }
 
 app.get('/api/pandas', async (req, res) => {
@@ -75,8 +79,7 @@ app.get('/api/pandas', async (req, res) => {
     const templateMap = {};
 
     templatesData.rows.forEach(t => {
-      const img = t.immutable_data?.img;
-      templateMap[t.template_id] = resolveImage(img);
+      templateMap[t.template_id] = extractTemplateImage(t);
     });
 
     // 3️⃣ Return final NFT objects
@@ -84,7 +87,7 @@ app.get('/api/pandas', async (req, res) => {
       asset_id: p.asset_id,
       template_id: p.template_id,
       name: `Proton Panda #${p.template_id}`,
-      image: templateMap[p.template_id]
+      image: templateMap[p.template_id] || 'https://via.placeholder.com/150?text=No+Image'
     }));
 
     console.log(`✅ Returning ${result.length} Proton Pandas`);
