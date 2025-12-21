@@ -1,87 +1,82 @@
-const express = require('express');
-const cors = require('cors');
-const fetch = (...args) =>
-  import('node-fetch').then(({ default: fetch }) => fetch(...args));
+import express from "express";
+import fetch from "node-fetch";
+import cors from "cors";
 
 const app = express();
-const PORT = process.env.PORT || 10000;
+app.use(cors());
 
-/* =======================
-   CONFIG
-======================= */
-const ATOMIC_API = 'https://proton.api.atomicassets.io';
-const COLLECTION_NAME = '144534352512';
+const PORT = process.env.PORT || 3000;
 
-/* =======================
-   CORS
-======================= */
-app.use(cors({
-  origin: [
-    'http://localhost:5500',
-    'http://pandania.xyz',
-    'https://pandania.xyz'
-  ]
-}));
+/**
+ * CONFIG
+ * -------------------------
+ */
+const ATOMIC_API = "https://proton.api.atomicassets.io/atomicassets/v1";
+const COLLECTION_NAME = "protonpandas"; // ⚠ lowercase, no spaces
 
-/* =======================
-   HELPERS
-======================= */
-function resolveImage(img) {
-  if (!img) return null;
-  if (img.startsWith('ipfs://'))
-    return img.replace('ipfs://', 'https://ipfs.io/ipfs/');
-  if (img.startsWith('Qm'))
-    return `https://ipfs.io/ipfs/${img}`;
-  return img;
-}
-
-/* =======================
-   API: GET PANDAS
-======================= */
-app.get('/api/pandas', async (req, res) => {
-  const { wallet } = req.query;
-  if (!wallet) return res.status(400).json({ error: 'wallet required' });
-
+/**
+ * =========================
+ * FETCH PROTON PANDAS BY WALLET
+ * =========================
+ */
+app.get("/api/pandas", async (req, res) => {
   try {
-    const url =
-      `${ATOMIC_API}/atomicassets/v1/assets` +
-      `?owner=${wallet}` +
-      `&collection_name=${COLLECTION_NAME}` +
-      `&page=1&limit=100&order=desc`;
+    const { wallet } = req.query;
 
-    const resp = await fetch(url);
-    const data = await resp.json();
-
-    if (!data?.data) {
-      console.log('⚠️ No assets returned');
-      return res.json([]);
+    if (!wallet) {
+      return res.status(400).json({ error: "Wallet is required" });
     }
 
-    console.log(`✅ Found ${data.data.length} Proton Pandas`);
+    const url =
+      `${ATOMIC_API}/assets` +
+      `?owner=${wallet}` +
+      `&collection_name=${COLLECTION_NAME}` +
+      `&page=1&limit=1000&order=desc&sort=asset_id`;
 
-    const result = data.data.map(a => ({
-      asset_id: a.asset_id,
-      template_id: a.template?.template_id || null,
-      name: a.name || `Proton Panda #${a.asset_id}`,
-      image: resolveImage(
-        a.data?.image ||
-        a.template?.immutable_data?.image ||
-        null
-      )
-    }));
+    const response = await fetch(url);
+    const json = await response.json();
 
-    console.log(`🐼 Returning ${result.length} Proton Pandas`);
-    res.json(result);
+    if (!json.success) {
+      throw new Error("AtomicAssets API error");
+    }
+
+    const assets = json.data.map(asset => {
+      const data = asset.data || {};
+
+      let image = data.img || data.image || "";
+
+      // Convert IPFS → HTTP
+      if (image.startsWith("Qm")) {
+        image = `https://ipfs.io/ipfs/${image}`;
+      }
+      if (image.startsWith("ipfs://")) {
+        image = image.replace("ipfs://", "https://ipfs.io/ipfs/");
+      }
+
+      return {
+        asset_id: asset.asset_id,
+        name: data.name || `Proton Panda #${asset.asset_id}`,
+        image
+      };
+    });
+
+    res.json(assets);
 
   } catch (err) {
-    console.error('❌ Backend error:', err);
-    res.status(500).json({ error: err.message });
+    console.error("Atomic fetch error:", err);
+    res.status(500).json({ error: "Failed to fetch NFTs" });
   }
 });
 
-/* =======================
-   START SERVER
-======================= */
+/**
+ * =========================
+ * HEALTH CHECK
+ * =========================
+ */
+app.get("/", (_, res) => {
+  res.send("🐼 Panda Pawn Shop backend running");
+});
+
 app.listen(PORT, () => {
-  console.log(`🐼 Panda backend LIVE on port ${PORT}`);
+  console.log(`✅ Server running on port ${PORT}`);
 });
