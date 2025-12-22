@@ -42,145 +42,54 @@ app.get('/api/pandas', async (req, res) => {
 
     if (pandas.length === 0) return res.json([]);
 
-    const nfts = await Promise.all(pandas.map(async (asset) => {
-      let imageUrl = null;
+    // Get unique template IDs
+    const templateIds = [...new Set(pandas.map(p => p.template_id))];
+    console.log(`📋 Fetching templates: ${templateIds.join(', ')}`);
+
+    // Fetch template data from the working AtomicAssets API
+    const templateMap = {};
+    try {
+      const templateUrl = `https://aa-xprnetwork-main.saltant.io/atomicassets/v1/templates?collection_name=${COLLECTION_IDENTIFIER}&ids=${templateIds.join(',')}&limit=100`;
+      console.log(`📡 Fetching templates from: ${templateUrl}`);
       
-      try {
-        const marketplaceUrl = `https://nft.xprnetwork.org/${COLLECTION_IDENTIFIER}/${asset.template_id}`;
-        console.log(`📡 Fetching: ${marketplaceUrl}`);
-        
-        const response = await fetch(marketplaceUrl, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
-          }
-        });
-        
-        if (response.ok) {
-          const html = await response.text();
-          
-          // Method 1: Look for __NEXT_DATA__ JSON structure (Next.js apps)
-          const nextDataMatch = html.match(/<script id="__NEXT_DATA__" type="application\/json">(.*?)<\/script>/s);
-          if (nextDataMatch && nextDataMatch[1]) {
-            try {
-              const nextData = JSON.parse(nextDataMatch[1]);
-              console.log(`🔍 Found __NEXT_DATA__ for template ${asset.template_id}`);
-              
-              // Log the structure to understand it better
-              const pageProps = nextData?.props?.pageProps;
-              if (pageProps) {
-                console.log(`📋 PageProps keys:`, Object.keys(pageProps));
-                
-                // Try multiple paths to find the image
-                const template = pageProps.template || pageProps.data?.template || pageProps.nft?.template;
-                if (template) {
-                  console.log(`📋 Template keys:`, Object.keys(template));
-                  const immutableData = template.immutable_data || template.data?.immutable_data;
-                  if (immutableData) {
-                    console.log(`📋 Immutable data keys:`, Object.keys(immutableData));
-                  }
-                }
-                
-                // Deep search for any IPFS hash in the entire pageProps object
-                const searchForIPFS = (obj, depth = 0) => {
-                  if (depth > 5) return null; // Prevent infinite recursion
-                  if (!obj || typeof obj !== 'object') return null;
-                  
-                  for (const key in obj) {
-                    const value = obj[key];
-                    if (typeof value === 'string') {
-                      // Check if it's an IPFS hash
-                      if (value.match(/^Qm[a-zA-Z0-9]{44}$/)) {
-                        console.log(`🎯 Found IPFS hash in key "${key}": ${value}`);
-                        return value;
-                      }
-                      // Check if it contains ipfs://
-                      if (value.includes('ipfs://')) {
-                        const hash = value.replace('ipfs://', '');
-                        console.log(`🎯 Found ipfs:// in key "${key}": ${hash}`);
-                        return hash;
-                      }
-                    } else if (typeof value === 'object') {
-                      const found = searchForIPFS(value, depth + 1);
-                      if (found) return found;
-                    }
-                  }
-                  return null;
-                };
-                
-                const foundHash = searchForIPFS(pageProps);
-                if (foundHash) {
-                  imageUrl = `https://bloks.io/cdn-cgi/image/width=400/https://proton.mypinata.cloud/ipfs/${foundHash}`;
-                  console.log(`✅ Found IPFS hash via deep search: ${foundHash}`);
-                }
-              }
-            } catch (jsonErr) {
-              console.log(`⚠️ Failed to parse __NEXT_DATA__: ${jsonErr.message}`);
-            }
-          }
-          
-          // Method 2: Look for img tags with src containing IPFS
-          if (!imageUrl) {
-            const imgMatches = html.match(/<img[^>]+src="([^"]*(?:bloks\.io|proton\.mypinata\.cloud)\/[^"]*\/ipfs\/(Qm[a-zA-Z0-9]{44})[^"]*)"/gi);
-            if (imgMatches && imgMatches.length > 0) {
-              const srcMatch = imgMatches[0].match(/src="([^"]*)"/i);
-              if (srcMatch && srcMatch[1]) {
-                imageUrl = srcMatch[1];
-                console.log(`✅ Found image in img tag: ${imageUrl}`);
-              }
-            }
-          }
-          
-          // Method 3: Aggressively search for any IPFS hash in the entire HTML
-          if (!imageUrl) {
-            const bloksMatches = html.match(/bloks\.io\/cdn-cgi\/image\/[^"'\s]+\/https:\/\/proton\.mypinata\.cloud\/ipfs\/(Qm[a-zA-Z0-9]{44})/g);
-            if (bloksMatches && bloksMatches.length > 0) {
-              const hashMatch = bloksMatches[0].match(/\/ipfs\/(Qm[a-zA-Z0-9]{44})/);
-              if (hashMatch && hashMatch[1]) {
-                imageUrl = `https://bloks.io/cdn-cgi/image/width=400/https://proton.mypinata.cloud/ipfs/${hashMatch[1]}`;
-                console.log(`✅ Found bloks.io IPFS hash: ${hashMatch[1]}`);
-              }
-            }
-          }
-          
-          // Method 4: Look for proton.mypinata.cloud URLs
-          if (!imageUrl) {
-            const pinataMatches = html.match(/proton\.mypinata\.cloud\/ipfs\/(Qm[a-zA-Z0-9]{44})/g);
-            if (pinataMatches && pinataMatches.length > 0) {
-              const hashMatch = pinataMatches[0].match(/\/(Qm[a-zA-Z0-9]{44})/);
-              if (hashMatch && hashMatch[1]) {
-                imageUrl = `https://proton.mypinata.cloud/ipfs/${hashMatch[1]}`;
-                console.log(`✅ Found pinata IPFS hash: ${hashMatch[1]}`);
-              }
-            }
-          }
-          
-          // Method 5: Look for image in meta tags (likely generic, but worth trying)
-          if (!imageUrl) {
-            const ogImageMatch = html.match(/<meta property="og:image" content="([^"]+)"/);
-            const twitterImageMatch = html.match(/<meta name="twitter:image" content="([^"]+)"/);
-            
-            if (ogImageMatch && ogImageMatch[1] && !ogImageMatch[1].includes('banner')) {
-              imageUrl = ogImageMatch[1];
-              console.log(`✅ Found image in og:image for template ${asset.template_id}`);
-            } else if (twitterImageMatch && twitterImageMatch[1] && !twitterImageMatch[1].includes('banner')) {
-              imageUrl = twitterImageMatch[1];
-              console.log(`✅ Found image in twitter:image for template ${asset.template_id}`);
-            }
-          }
-          
-          if (!imageUrl) {
-            console.log(`⚠️ No image found for template ${asset.template_id}`);
-          }
+      const templateResponse = await fetch(templateUrl, {
+        headers: {
+          'Accept': 'application/json'
         }
-      } catch (err) {
-        console.log(`❌ Failed to fetch marketplace page for template ${asset.template_id}: ${err.message}`);
+      });
+
+      if (templateResponse.ok) {
+        const templateData = await templateResponse.json();
+        console.log(`✅ Received ${templateData.data?.length || 0} templates`);
+
+        if (templateData.success && templateData.data) {
+          templateData.data.forEach(template => {
+            const ipfsHash = template.immutable_data?.image || template.immutable_data?.img;
+            if (ipfsHash) {
+              templateMap[template.template_id] = ipfsHash;
+              console.log(`🖼️ Template ${template.template_id}: ${ipfsHash}`);
+            }
+          });
+        }
+      } else {
+        console.log(`⚠️ Template API returned ${templateResponse.status}`);
       }
-      
-      if (!imageUrl) {
+    } catch (apiErr) {
+      console.log(`❌ Failed to fetch templates: ${apiErr.message}`);
+    }
+
+    // Map NFTs with images
+    const nfts = pandas.map(asset => {
+      const ipfsHash = templateMap[asset.template_id];
+      let imageUrl;
+
+      if (ipfsHash) {
+        imageUrl = `https://bloks.io/cdn-cgi/image/width=400/https://proton.mypinata.cloud/ipfs/${ipfsHash}`;
+      } else {
+        // Fallback SVG
         imageUrl = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Crect fill='%23333' width='300' height='300'/%3E%3Ctext fill='%23fff' font-family='Arial' font-size='20' x='50%25' y='50%25' text-anchor='middle' dy='.3em'%3EProton Panda%3C/text%3E%3Ctext fill='%23888' font-family='Arial' font-size='16' x='50%25' y='60%25' text-anchor='middle'%3ETemplate ${asset.template_id}%3C/text%3E%3C/svg%3E`;
       }
-      
+
       return {
         asset_id: asset.asset_id,
         template_id: asset.template_id,
@@ -188,9 +97,9 @@ app.get('/api/pandas', async (req, res) => {
         image: imageUrl,
         collection: COLLECTION_IDENTIFIER
       };
-    }));
+    });
 
-    console.log(`✅ Returning ${nfts.length} NFTs with scraped images`);
+    console.log(`✅ Returning ${nfts.length} NFTs with images`);
     res.json(nfts);
 
   } catch (err) {
