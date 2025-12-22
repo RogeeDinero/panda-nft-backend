@@ -42,20 +42,57 @@ app.get('/api/pandas', async (req, res) => {
 
     if (pandas.length === 0) return res.json([]);
 
-    const nfts = pandas.map(asset => ({
-      asset_id: asset.asset_id,
-      template_id: asset.template_id,
-      name: `Proton Panda #${asset.asset_id}`,
-      // Use marketplace preview as image proxy - most reliable!
-      image: `https://nft.xprnetwork.org/preview/${COLLECTION_IDENTIFIER}/${asset.template_id}`,
-      collection: COLLECTION_IDENTIFIER,
-      fallback_urls: [
-        `https://bloks.io/cdn-cgi/image/width=400/https://proton.mypinata.cloud/ipfs/QmbQF1dXUFE7hHPck8UuGkMJw9jrb2dGg5CrED8CMEwNcP`,
-        `https://proton.mypinata.cloud/ipfs/QmbQF1dXUFE7hHPck8UuGkMJw9jrb2dGg5CrED8CMEwNcP`
-      ]
+    // Fetch actual image URLs by scraping marketplace HTML
+    const nfts = await Promise.all(pandas.map(async (asset) => {
+      let imageUrl = null;
+      
+      try {
+        // Fetch the marketplace page for this specific NFT
+        const marketplaceUrl = `https://nft.xprnetwork.org/${COLLECTION_IDENTIFIER}/${asset.template_id}`;
+        console.log(`📡 Fetching: ${marketplaceUrl}`);
+        
+        const response = await fetch(marketplaceUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+          }
+        });
+        
+        if (response.ok) {
+          const html = await response.text();
+          
+          // Extract IPFS hash from the HTML (look for proton.mypinata.cloud or bloks.io URLs)
+          const ipfsMatch = html.match(/proton\.mypinata\.cloud\/ipfs\/(Qm[a-zA-Z0-9]{44})/);
+          const bloksMatch = html.match(/bloks\.io\/cdn-cgi\/image\/[^"]+\/https:\/\/proton\.mypinata\.cloud\/ipfs\/(Qm[a-zA-Z0-9]{44})/);
+          
+          if (bloksMatch && bloksMatch[1]) {
+            imageUrl = `https://bloks.io/cdn-cgi/image/width=400/https://proton.mypinata.cloud/ipfs/${bloksMatch[1]}`;
+            console.log(`✅ Found bloks.io image for template ${asset.template_id}: ${bloksMatch[1]}`);
+          } else if (ipfsMatch && ipfsMatch[1]) {
+            imageUrl = `https://proton.mypinata.cloud/ipfs/${ipfsMatch[1]}`;
+            console.log(`✅ Found IPFS image for template ${asset.template_id}: ${ipfsMatch[1]}`);
+          } else {
+            console.log(`⚠️ No image found in HTML for template ${asset.template_id}`);
+          }
+        }
+      } catch (err) {
+        console.log(`❌ Failed to fetch marketplace page for template ${asset.template_id}: ${err.message}`);
+      }
+      
+      // Fallback to placeholder if scraping failed
+      if (!imageUrl) {
+        imageUrl = `https://via.placeholder.com/300x300/333333/ffffff?text=Panda+${asset.template_id}`;
+      }
+      
+      return {
+        asset_id: asset.asset_id,
+        template_id: asset.template_id,
+        name: `Proton Panda #${asset.asset_id}`,
+        image: imageUrl,
+        collection: COLLECTION_IDENTIFIER
+      };
     }));
 
-    console.log(`✅ Returning ${nfts.length} NFTs`);
+    console.log(`✅ Returning ${nfts.length} NFTs with scraped images`);
     res.json(nfts);
 
   } catch (err) {
