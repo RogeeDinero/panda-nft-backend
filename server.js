@@ -53,34 +53,88 @@ app.get('/api/pandas', async (req, res) => {
         
         const response = await fetch(marketplaceUrl, {
           headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
           }
         });
         
         if (response.ok) {
           const html = await response.text();
           
-          // Extract IPFS hash from the HTML (look for proton.mypinata.cloud or bloks.io URLs)
-          const ipfsMatch = html.match(/proton\.mypinata\.cloud\/ipfs\/(Qm[a-zA-Z0-9]{44})/);
-          const bloksMatch = html.match(/bloks\.io\/cdn-cgi\/image\/[^"]+\/https:\/\/proton\.mypinata\.cloud\/ipfs\/(Qm[a-zA-Z0-9]{44})/);
+          // Method 1: Look for __NEXT_DATA__ JSON structure (Next.js apps)
+          const nextDataMatch = html.match(/<script id="__NEXT_DATA__" type="application\/json">(.*?)<\/script>/s);
+          if (nextDataMatch && nextDataMatch[1]) {
+            try {
+              const nextData = JSON.parse(nextDataMatch[1]);
+              // Navigate through Next.js data structure to find image
+              const pageProps = nextData?.props?.pageProps;
+              if (pageProps) {
+                // Look for image in various possible locations
+                const img = pageProps.template?.immutable_data?.img || 
+                           pageProps.template?.immutable_data?.image ||
+                           pageProps.asset?.data?.img ||
+                           pageProps.asset?.data?.image ||
+                           pageProps.img ||
+                           pageProps.image;
+                
+                if (img) {
+                  // Convert IPFS to CDN URL
+                  if (img.startsWith('Qm')) {
+                    imageUrl = `https://bloks.io/cdn-cgi/image/width=400/https://proton.mypinata.cloud/ipfs/${img}`;
+                  } else if (img.includes('ipfs://')) {
+                    const hash = img.replace('ipfs://', '');
+                    imageUrl = `https://bloks.io/cdn-cgi/image/width=400/https://proton.mypinata.cloud/ipfs/${hash}`;
+                  } else if (img.includes('proton.mypinata.cloud')) {
+                    imageUrl = img;
+                  }
+                  console.log(`✅ Found image in __NEXT_DATA__ for template ${asset.template_id}`);
+                }
+              }
+            } catch (jsonErr) {
+              console.log(`⚠️ Failed to parse __NEXT_DATA__: ${jsonErr.message}`);
+            }
+          }
           
-          if (bloksMatch && bloksMatch[1]) {
-            imageUrl = `https://bloks.io/cdn-cgi/image/width=400/https://proton.mypinata.cloud/ipfs/${bloksMatch[1]}`;
-            console.log(`✅ Found bloks.io image for template ${asset.template_id}: ${bloksMatch[1]}`);
-          } else if (ipfsMatch && ipfsMatch[1]) {
-            imageUrl = `https://proton.mypinata.cloud/ipfs/${ipfsMatch[1]}`;
-            console.log(`✅ Found IPFS image for template ${asset.template_id}: ${ipfsMatch[1]}`);
-          } else {
-            console.log(`⚠️ No image found in HTML for template ${asset.template_id}`);
+          // Method 2: Look for image in meta tags
+          if (!imageUrl) {
+            const ogImageMatch = html.match(/<meta property="og:image" content="([^"]+)"/);
+            const twitterImageMatch = html.match(/<meta name="twitter:image" content="([^"]+)"/);
+            
+            if (ogImageMatch && ogImageMatch[1]) {
+              imageUrl = ogImageMatch[1];
+              console.log(`✅ Found image in og:image for template ${asset.template_id}`);
+            } else if (twitterImageMatch && twitterImageMatch[1]) {
+              imageUrl = twitterImageMatch[1];
+              console.log(`✅ Found image in twitter:image for template ${asset.template_id}`);
+            }
+          }
+          
+          // Method 3: Look for IPFS URLs in the HTML
+          if (!imageUrl) {
+            const ipfsMatch = html.match(/proton\.mypinata\.cloud\/ipfs\/(Qm[a-zA-Z0-9]{44})/);
+            const bloksMatch = html.match(/bloks\.io\/cdn-cgi\/image\/[^"]+\/https:\/\/proton\.mypinata\.cloud\/ipfs\/(Qm[a-zA-Z0-9]{44})/);
+            
+            if (bloksMatch && bloksMatch[1]) {
+              imageUrl = `https://bloks.io/cdn-cgi/image/width=400/https://proton.mypinata.cloud/ipfs/${bloksMatch[1]}`;
+              console.log(`✅ Found bloks.io image for template ${asset.template_id}`);
+            } else if (ipfsMatch && ipfsMatch[1]) {
+              imageUrl = `https://proton.mypinata.cloud/ipfs/${ipfsMatch[1]}`;
+              console.log(`✅ Found IPFS image for template ${asset.template_id}`);
+            }
+          }
+          
+          if (!imageUrl) {
+            console.log(`⚠️ No image found for template ${asset.template_id}`);
           }
         }
       } catch (err) {
         console.log(`❌ Failed to fetch marketplace page for template ${asset.template_id}: ${err.message}`);
       }
       
-      // Fallback to placeholder if scraping failed
+      // Fallback to a working placeholder service
       if (!imageUrl) {
-        imageUrl = `https://via.placeholder.com/300x300/333333/ffffff?text=Panda+${asset.template_id}`;
+        // Use a simple SVG data URL as fallback
+        imageUrl = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Crect fill='%23333' width='300' height='300'/%3E%3Ctext fill='%23fff' font-family='Arial' font-size='20' x='50%25' y='50%25' text-anchor='middle' dy='.3em'%3EProton Panda%3C/text%3E%3Ctext fill='%23888' font-family='Arial' font-size='16' x='50%25' y='60%25' text-anchor='middle'%3ETemplate ${asset.template_id}%3C/text%3E%3C/svg%3E`;
       }
       
       return {
